@@ -8,7 +8,8 @@ def get_action_prompt(instruction, clickable_infos, width, height, thought_histo
     
     prompt += "### Screenshot information ###\n"
     prompt += "In order to help you better perceive the content in this screenshot, we extract some information of the current screenshot. "
-    prompt += "This information consists of two parts: coordinates; content. "
+    # prompt += "This information consists of two parts: coordinates; content. "
+    prompt += "This information consists of multiple lines, each representing an element in this screenshot, which consists of three parts: coordinates, mark number and content. "
     if location_info == 'center':
         prompt += "The format of the coordinates is [x, y], x is the pixel from left to right and y is the pixel from top to bottom; "
     elif location_info == 'bbox':
@@ -61,6 +62,7 @@ def get_action_prompt(instruction, clickable_infos, width, height, thought_histo
     
     prompt += "### Task requirements ###\n"
     prompt += "In order to meet the user\'s requirements, you need to select one of the following operations to operate on the current screen:\n"
+    prompt += "You should prioritize interact the elements provided in the information because they contain accurate coordinates and some content which can help you.\n Unless you find the element you want to interact with is not labeled with a numeric tag and other elements with numeric tags cannot help with the task\n"
     prompt += "Note that to open an app, use the Open App action, rather than tapping the app's icon. "
     prompt += "For certain items that require selection, such as font and font size, direct input is more efficient than scrolling through choices."
     prompt += "You must choose one of the actions below:\n"
@@ -86,13 +88,17 @@ def get_action_prompt(instruction, clickable_infos, width, height, thought_histo
     prompt += "Tell (text): Tell me the answer of the input query.\n"
     # prompt += "Stop: If you think all the requirements of user\'s instruction have been completed and no further operation is required, you can choose this action to terminate the operation process."
     prompt += "Stop: If all the operations to meet the user\'s requirements have been completed in ### History operation ###, use this operation to stop the whole process."
+    # prompt += "By the way,you must ensure that the coordinates of the element you interact with are consistent with the ones provided."
     prompt += "\n\n"
     
     # prompt += "### Output requirements ###\n"
     # prompt += "You need to output the following content:\n"
 
     prompt += "### Output format ###\n"
-    prompt += "### Thought ###\nThis is your thinking about how to proceed the next operation, please output the thoughts about the history operations explicitly.\n"
+    prompt += "### Thought ###\nThis is your thinking about how to proceed the next operation, please output the thoughts about the history operations explicitly.And if you do not interact the elements provided in the information, please explain why\n"
+    # prompt += "You must indicate the element you are going to interact with(indicate the coordinates、mark number and content), and explain why you are performing this action."
+    # prompt += "### Thought ###\nThis is your thinking about how to proceed the next operation, please output the thoughts about the history operations explicitly.\nYou must indicate the element you are going to interact with(indicate the coordinates、mark number and content), and explain why you are performing this action."
+    
     prompt += "### Action ###\nOpen App () or Tap () or Double Tap () or Triple Tap () or Shortcut () or Press() or Type () or Tell () or Stop. Only one action can be output at one time.\n"
     prompt += "### Operation ###\nThis is a one sentence summary of this operation."
     prompt += "\n\n"

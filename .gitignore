@@ -4,3 +4,5 @@ __pycache__/
 # custom
 **/screenshot/*
 **/temp/*
+.vscode/launch.json
+log/

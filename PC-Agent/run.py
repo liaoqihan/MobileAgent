@@ -3,7 +3,29 @@ import time
 import copy
 import torch
 import shutil
+import argparse
 from PIL import Image, ImageDraw
+from retrying import retry
+parser = argparse.ArgumentParser(description="PC Agent")
+parser.add_argument('--instruction', type=str, default='default')
+parser.add_argument('--icon_caption', type=int, default=1) # 0: w/o icon_caption
+parser.add_argument('--location_info', type=str, default='center') # center or bbox or icon_centor; icon_center: only icon center
+parser.add_argument('--use_som', type=int, default=1) # for action
+parser.add_argument('--draw_text_box', type=int, default=1, help="whether to draw text boxes in som.")
+parser.add_argument('--font_path', type=str, default="/System/Library/Fonts/Times.ttc")
+parser.add_argument('--pc_type', type=str, default="mac") # windows or mac
+parser.add_argument('--api_url', type=str, default="https://api.openai.com/v1/chat/completions", help="GPT-4o api url.")
+parser.add_argument('--api_token', type=str, help="Your GPT-4o api token.")
+parser.add_argument('--qwen_api', type=str, default='', help="Input your Qwen-VL api if icon_caption=1.")
+parser.add_argument('--add_info', type=str, default='')
+parser.add_argument('--disable_reflection', action='store_true')
+parser.add_argument("--empId", type=str)
+parser.add_argument("--api_key", type=str)
+args = parser.parse_args()
+
+os.environ['empId'] = args.empId
+os.environ['api_key'] = args.api_key
+os.environ['api_url'] = args.api_url
 
 from PCAgent.api import inference_chat
 from PCAgent.text_localization import ocr
@@ -13,6 +35,7 @@ from PCAgent.chat import init_action_chat, init_reflect_chat, init_memory_chat, 
 
 from modelscope.pipelines import pipeline
 from modelscope.utils.constant import Tasks
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from modelscope import snapshot_download, AutoModelForCausalLM, AutoTokenizer, GenerationConfig
 
 from dashscope import MultiModalConversation
@@ -20,14 +43,12 @@ import dashscope
 import concurrent
 
 from pynput.mouse import Button, Controller
-import argparse
 import pyautogui
 import pyperclip
 from PCAgent.merge_strategy import merge_boxes_and_texts, merge_all_icon_boxes, merge_boxes_and_texts_new
 
-
-
 import re
+from PCAgent.util import print_execution_time
 
 def contains_chinese(text):
     chinese_pattern = re.compile(r'[\u4e00-\u9fff]+')
@@ -63,8 +84,10 @@ def draw_coordinates_boxes_on_image(image_path, coordinates, output_image_path, 
         # coord[1] = coord[1] - padding
         # coord[2] = coord[2] + padding
         # coord[3] = coord[3] + padding
-
-        draw.rectangle(coord, outline=color, width=int(height * 0.0025))
+        try:
+            draw.rectangle(coord, outline=color, width=int(height * 0.0025))
+        except Exception as e:
+            print(f"draw.rectangle error: {e} i, coord:{(i, coord)}")
 
         font = ImageFont.truetype(font_path, int(height * 0.012))
         text_x = coord[0] + int(height * 0.0025)
@@ -76,21 +99,7 @@ def draw_coordinates_boxes_on_image(image_path, coordinates, output_image_path, 
 
 
 
-parser = argparse.ArgumentParser(description="PC Agent")
-parser.add_argument('--instruction', type=str, default='default')
-parser.add_argument('--icon_caption', type=int, default=0) # 0: w/o icon_caption
-parser.add_argument('--location_info', type=str, default='center') # center or bbox or icon_centor; icon_center: only icon center
-parser.add_argument('--use_som', type=int, default=1) # for action
-parser.add_argument('--draw_text_box', type=int, default=0, help="whether to draw text boxes in som.")
-parser.add_argument('--font_path', type=str, default="/System/Library/Fonts/Times.ttc")
-parser.add_argument('--pc_type', type=str, default="mac") # windows or mac
-parser.add_argument('--api_url', type=str, default="https://api.openai.com/v1/chat/completions", help="GPT-4o api url.")
-parser.add_argument('--api_token', type=str, help="Your GPT-4o api token.")
-parser.add_argument('--qwen_api', type=str, default='', help="Input your Qwen-VL api if icon_caption=1.")
-parser.add_argument('--add_info', type=str, default='')
-parser.add_argument('--disable_reflection', action='store_true')
 
-args = parser.parse_args()
 
 if args.pc_type == "mac":
     ctrl_key = "command"
@@ -104,9 +113,19 @@ else:
 
 vl_model_version = 'gpt-4o'
 
-def get_screenshot():
+
+def extract_x_y(action_string):
+    numbers = re.findall(r'\d+', action_string)
+    if len(numbers) >= 2:
+        x = int(numbers[0])
+        y = int(numbers[1])
+        return x, y
+    else:
+        raise ValueError("The given string does not contain enough numbers.")
+    
+def get_screenshot(path='screenshot/screenshot.png'):
     screenshot = pyautogui.screenshot()
-    screenshot.save('screenshot/screenshot.png')
+    screenshot.save(path)
     return
 
 def open_app(name):
@@ -164,6 +183,14 @@ def tap_type_enter(x, y, text):
     pyautogui.press('enter')
     return
 
+def delete_part_png(directory):
+    files = os.listdir(directory)
+    for file_name in files:
+        if "_part_" in file_name:
+            file_path = os.path.join(directory, file_name)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+                print(f"Deleted file: {file_path}")
 
 ####################################### Edit your Setting #########################################
 
@@ -200,7 +227,8 @@ else:
     add_info = args.add_info
 
 # Reflection Setting: If you want to improve the operating speed, you can disable the reflection agent. This may reduce the success rate.
-reflection_switch = True if not args.disable_reflection else False
+# reflection_switch = True if not args.disable_reflection else False
+reflection_switch = False
 
 # Memory Setting: If you want to improve the operating speed, you can disable the memory unit. This may reduce the success rate.
 memory_switch = False # default: False
@@ -271,10 +299,43 @@ def process_image(image, query):
     
     try:
         response = response['output']['choices'][0]['message']['content'][0]["text"]
-    except:
+    except Exception as e:
+        print(f"process_image response:{response} e:{e}")
         response = "An icon."
     
     return response
+
+
+# def process_image(image, query):
+#     dashscope.api_key = qwen_api
+#     image = "file://" + image
+#     messages = [{
+#         'role': 'user',
+#         'content': [
+#             {
+#                 'image': image
+#             },
+#             {
+#                 'text': query
+#             },
+#         ]
+#     }]
+#     @retry(stop_max_attempt_number=5, wait_fixed=1000)
+#     def call_api():
+#         response = MultiModalConversation.call(model=caption_model, messages=messages)
+#         try:
+#             response = response['output']['choices'][0]['message']['content'][0]["text"]
+#             return response
+#         except Exception as e:
+#             print(f"response:{response} e:{e}")
+#             raise Exception(f"response:{response} e:{e}")
+
+#     try:
+#         response = call_api()
+#         return response
+#     except Exception as e:
+#         return "An icon."
+
 
 
 def generate_api(images, query):
@@ -332,17 +393,19 @@ def icon_parallel(img, det, img_x_list, img_y_list, padding, i):
     sub_coordinates = merge_all_icon_boxes(sub_coordinates)
     return sub_coordinates
 
+
+@print_execution_time
 def get_perception_infos(screenshot_file, screenshot_som_file, font_path):
-    get_screenshot()
+    get_screenshot(path=screenshot_file)
     
     total_width, total_height = Image.open(screenshot_file).size
+    part_path = screenshot_file.replace(".png","")
 
     # Partition Image into 4 parts
-    split_image_into_4(screenshot_file, './screenshot/screenshot')
-    img_list = ['./screenshot/screenshot_part_1.png', './screenshot/screenshot_part_2.png',
-                './screenshot/screenshot_part_3.png', './screenshot/screenshot_part_4.png']
-    img_x_list = [0, total_width/2, 0, total_width/2]
-    img_y_list = [0, 0, total_height/2, total_height/2]
+    split_image_into_4(screenshot_file, part_path)
+    img_list = [f"{part_path}_part_{i+1}.png" for i in range(4)]
+    img_x_list = [0, total_width / 2, 0, total_width / 2]
+    img_y_list = [0, 0, total_height / 2, total_height / 2]
     coordinates = []
     texts = []
     padding = total_height * 0.0025  # 10
@@ -355,7 +418,7 @@ def get_perception_infos(screenshot_file, screenshot_som_file, font_path):
             coordinate[0] = int(max(0, img_x_list[i] + coordinate[0] - padding))
             coordinate[2] = int(min(total_width, img_x_list[i] + coordinate[2] + padding))
             coordinate[1] = int(max(0, img_y_list[i] + coordinate[1] - padding))
-            coordinate[3] = int(min(total_height,img_y_list[i] + coordinate[3] + padding))
+            coordinate[3] = int(min(total_height, img_y_list[i] + coordinate[3] + padding))
 
         sub_text_merge, sub_coordinates_merge = merge_boxes_and_texts_new(sub_text, sub_coordinates)
         coordinates.extend(sub_coordinates_merge)
@@ -427,25 +490,27 @@ def get_perception_infos(screenshot_file, screenshot_som_file, font_path):
                         des = "None"
                     else:
                         des = generate_local(tokenizer, model, image_path, prompt)
-                    icon_map[i+1] = des
+                    icon_map[i + 1] = des
             else:
                 for i in range(len(images)):
                     images[i] = os.path.join(temp_file, images[i])
                 icon_map = generate_api(images, prompt)
-            for i, j in zip(image_id, range(1, len(image_id)+1)):
+            for i, j in zip(image_id, range(1, len(image_id) + 1)):
                 if icon_map.get(j):
                     perception_infos[i]['text'] += ": " + icon_map[j]
 
     if args.location_info == 'center':
         for i in range(len(perception_infos)):
-            perception_infos[i]['coordinates'] = [int((perception_infos[i]['coordinates'][0]+perception_infos[i]['coordinates'][2])/2), int((perception_infos[i]['coordinates'][1]+perception_infos[i]['coordinates'][3])/2)]
+            perception_infos[i]['coordinates'] = [int((perception_infos[i]['coordinates'][0] + perception_infos[i]['coordinates'][2]) / 2), int((perception_infos[i]['coordinates'][1] + perception_infos[i]['coordinates'][3]) / 2)]
     elif args.location_info == 'icon_center':
         for i in range(len(perception_infos)):
             if 'icon' in perception_infos[i]['text']:
                 perception_infos[i]['coordinates'] = [
                     int((perception_infos[i]['coordinates'][0] + perception_infos[i]['coordinates'][2]) / 2),
                     int((perception_infos[i]['coordinates'][1] + perception_infos[i]['coordinates'][3]) / 2)]
-
+    # 清空四分图
+    for img in img_list:
+        os.remove(img)
     return perception_infos, total_width, total_height
 
 ### Load caption model ###
@@ -498,25 +563,115 @@ if not os.path.exists(screenshot):
 error_flag = False
 
 
-iter = 0
+import os
+import time
+import shutil
+import json
+import copy
+from PIL import Image, ImageDraw, ImageFont
+
+def mark_coordinate_on_image(image_path, coordinates, action):
+    # 打开图像
+    with Image.open(image_path) as img:
+        draw = ImageDraw.Draw(img)
+        
+        # 设置字体
+        try:
+            font = ImageFont.truetype("/Library/Fonts/Arial.ttf", 50)
+        except IOError:
+            font = ImageFont.load_default()
+        
+        # 画出坐标点
+        for coord in coordinates:
+            x, y = coord
+            # 画一个红色的十字，标记坐标
+            cross_size = 2000
+            # 水平线
+            draw.line((x - cross_size, y, x + cross_size, y), fill='red', width=2)
+            # 垂直线
+            draw.line((x, y - cross_size, x, y + cross_size), fill='red', width=2)
+            # 在坐标旁边写出坐标值
+            draw.text((x + 5, y + 5), action, fill='red', font=font)
+        
+        # 保存新的图像
+        output_path = image_path.replace("screenshot",f"screenshot_{action}")
+        img.save(output_path)
+
+# Function to create unique log folder
+def create_unique_log_folder(base_folder,instruction=""):
+    timestamp = instruction + "_" + time.strftime("%Y%m%d%H%M%S")
+    log_folder = os.path.join(base_folder, timestamp)
+    os.makedirs(log_folder, exist_ok=True)
+    return log_folder
+
+# Function to save response to log file
+# def save_response_to_log(log_folder, iter, prompt, response, screenshot_file, screenshot_som_file=None):
+#     log_file = os.path.join(log_folder, f"gpt_log_{iter}.json")
+#     data = {
+#         "iteration": iter,
+#         "prompt": prompt,
+#         "response": response,
+#         "screenshot_file": screenshot_file,
+#         "screenshot_som_file": screenshot_som_file
+#     }
+#     with open(log_file, "w") as f:
+#         json.dump(data, f, indent=4)
+
+def save_response_to_log(log_folder, iter, prompt, response,type="",images=[]):
+    log_file = os.path.join(log_folder, f"iter_{iter}_{type}_gpt_log.txt")
+    split_str = "="*30
+    content = (
+        f"{split_str}Iteration{split_str}\n{iter}\n"
+        f"{split_str}Prompt{split_str}\n{prompt}\n"
+        f"{split_str}Response{split_str}\n{response}\n"
+        f"{split_str}images{split_str}\n{images}\n"
+    )
+
+    # Write the content to the log file
+    with open(log_file, "w") as f:
+        f.write(content)
+
+
+
+# Create base folders if not already present
+# base_temp_folder = "temp"
+
+# if os.path.exists(base_temp_folder):
+#     shutil.rmtree(base_temp_folder)
+# os.mkdir(base_temp_folder)
+base_log_folder = "log"
+if not os.path.exists(base_log_folder):
+    os.mkdir(base_log_folder)
+
+# Create a unique log folder
+log_folder = create_unique_log_folder(base_log_folder,instruction=instruction)
+
+iter = 1
+error_flag = False
+
+
+screenshot_file = f"{log_folder}/iter_{iter}_screenshot.png"
+screenshot_som_file = f"{log_folder}/iter_{iter}_screenshot_som.png"
+
+perception_infos, width, height = get_perception_infos(screenshot_file, screenshot_som_file, font_path=args.font_path)
+shutil.rmtree(temp_file)
+os.mkdir(temp_file)
+
 while True:
-    iter += 1
-    if iter == 1:
-        screenshot_file = "./screenshot/screenshot.png"
-        screenshot_som_file = "./screenshot/screenshot_som.png"
-        perception_infos, width, height = get_perception_infos(screenshot_file, screenshot_som_file, font_path=args.font_path)
-        shutil.rmtree(temp_file)
-        os.mkdir(temp_file)
-        # print(perception_infos)
+    
+
 
     prompt_action = get_action_prompt(instruction, perception_infos, width, height, thought_history, summary_history, action_history, summary, action, reflection_thought, add_info, error_flag, completed_requirements, memory, args.use_som, args.icon_caption, args.location_info)
     chat_action = init_action_chat()
+    
     if args.use_som == 1:
-        chat_action = add_response("user", prompt_action, chat_action, [screenshot_file, screenshot_som_file])
+        images = [screenshot_file, screenshot_som_file]
     else:
-        chat_action = add_response("user", prompt_action, chat_action, [screenshot_file])
-
+        images = [screenshot_file]
+    chat_action = add_response("user", prompt_action, chat_action, images)
     output_action = inference_chat(chat_action, vl_model_version, API_url, token)
+    
+    save_response_to_log(log_folder, iter, prompt_action, output_action,images=images)
     thought = output_action.split("### Thought ###")[-1].split("### Action ###")[0].replace("\n", " ").replace(":", "").replace("  ", " ").strip()
     summary = output_action.split("### Operation ###")[-1].replace("\n", " ").replace("  ", " ").strip()
     action = output_action.split("### Action ###")[-1].split("### Operation ###")[0].replace("\n", " ").replace("  ", " ").strip()
@@ -525,7 +680,9 @@ while True:
     print(status)
     print(output_action)
     print('#' * len(status))
-    
+
+    # debug
+    time.sleep(5)
 
     if "Double Tap" in action:
         coordinate = action.split("(")[-1].split(")")[0].split(", ")
@@ -538,8 +695,9 @@ while True:
         tap(x, y, 3)
 
     elif "Tap" in action:
-        coordinate = action.split("(")[-1].split(")")[0].split(", ")
-        x, y = int(coordinate[0]), int(coordinate[1])
+        # coordinate = action.split("(")[-1].split(")")[0].split(", ")
+        coordinate = action.split(")")[0].split("(")[-1].split(",")
+        x, y = int(coordinate[0]), int(coordinate[-1])
         tap(x, y, 1)
 
     elif "Shortcut" in action:
@@ -556,23 +714,32 @@ while True:
         open_app(app)
 
     elif "Type" in action:
-        coordinate = action.split("(")[1].split(")")[0].split(", ")
-        x, y = int(coordinate[0]), int(coordinate[1])
+        try:
+            coordinate = action.split("(")[1].split(")")[0].split(", ")
+            x, y = int(coordinate[0]), int(coordinate[1])
+        except:
+            x, y = extract_x_y(action)
         if "[text]" not in action:
             text = action.split("[")[-1].split("]")[0]
         else:
             text = action.split(" \"")[-1].split("\"")[0]
+
         tap_type_enter(x, y, text)
         
     elif "Stop" in action:
         break
-    
-    time.sleep(2) # wait for the action to be excuted
+    if "Type" in action or "Tap" in action:
+        mark_coordinate_on_image(screenshot_file,[(x,y)],action)
+    print(f"{action} 已完成")
+    time.sleep(2)  # 等待操作执行完成
+
+    delete_part_png(log_folder)
 
     if memory_switch:
         prompt_memory = get_memory_prompt(insight)
         chat_action = add_response("user", prompt_memory, chat_action)
         output_memory = inference_chat(chat_action, vl_model_version, API_url, token)
+        save_response_to_log(log_folder, iter, prompt_memory, output_action,type="memory")
         chat_action = add_response("assistant", output_memory, chat_action)
         status = "#" * 50 + " Memory " + "#" * 50
         print(status)
@@ -583,26 +750,31 @@ while True:
             memory += output_memory
     
     last_perception_infos = copy.deepcopy(perception_infos)
-    last_screenshot_file = "./screenshot/last_screenshot.png"
-    if os.path.exists(last_screenshot_file):
-        os.remove(last_screenshot_file)
-    os.rename(screenshot_file, last_screenshot_file)
-    if args.use_som == 1:
-        last_screenshot_som_file = "./screenshot/last_screenshot_som.png"
-        if os.path.exists(last_screenshot_som_file):
-            os.remove(last_screenshot_som_file)
-        os.rename(screenshot_som_file, last_screenshot_som_file)
+    # last_screenshot_file = f"{log_folder}/iter_{iter}_last_screenshot.png"
+    # if os.path.exists(last_screenshot_file):
+    #     os.remove(last_screenshot_file)
+    # os.rename(screenshot_file, last_screenshot_file)
+    # if args.use_som == 1:
+    #     last_screenshot_som_file = f"{log_folder}/iter_{iter}_screenshot_som.png"
+    #     if os.path.exists(last_screenshot_som_file):
+    #         os.remove(last_screenshot_som_file)
+    #     os.rename(screenshot_som_file, last_screenshot_som_file)
     
-    perception_infos, width, height = get_perception_infos(screenshot_file, screenshot_som_file, font_path=args.font_path)
+    new_timestamp = time.strftime("%Y%m%d%H%M%S")
+    screenshot_after_file = f"{log_folder}/iter_{iter}_screenshot_after_{new_timestamp}.png"
+    screenshot_som_after_file = f"{log_folder}/iter_{iter}_screenshot_som_after_{new_timestamp}.png"
+    perception_infos, width, height = get_perception_infos(screenshot_after_file, screenshot_som_after_file, font_path=args.font_path)
     shutil.rmtree(temp_file)
     os.mkdir(temp_file)
+
     
     if reflection_switch:
         prompt_reflect = get_reflect_prompt(instruction, last_perception_infos, perception_infos, width, height, summary, action, add_info)
         chat_reflect = init_reflect_chat()
-        chat_reflect = add_response("user", prompt_reflect, chat_reflect, [last_screenshot_file, screenshot_file])
+        chat_reflect = add_response("user", prompt_reflect, chat_reflect, [screenshot_file, screenshot_after_file])
 
         output_reflect = inference_chat(chat_reflect, vl_model_version, API_url, token)
+        save_response_to_log(log_folder, iter, prompt_reflect, output_action,type="reflection",images=[screenshot_file, screenshot_after_file])
         reflection_thought = output_reflect.split("### Thought ###")[-1].split("### Answer ###")[0].replace("\n", " ").strip()
         reflect = output_reflect.split("### Answer ###")[-1].replace("\n", " ").strip()
         chat_reflect = add_response("assistant", output_reflect, chat_reflect)
@@ -620,6 +792,7 @@ while True:
             chat_planning = init_memory_chat()
             chat_planning = add_response("user", prompt_planning, chat_planning)
             output_planning = inference_chat(chat_planning, 'gpt-4o', API_url, token)
+            save_response_to_log(log_folder, iter, prompt_planning, output_action,type="A_reflection")
             chat_planning = add_response("assistant", output_planning, chat_planning)
             status = "#" * 50 + " Planning " + "#" * 50
             print(status)
@@ -646,6 +819,7 @@ while True:
         chat_planning = init_memory_chat()
         chat_planning = add_response("user", prompt_planning, chat_planning)
         output_planning = inference_chat(chat_planning, 'gpt-4o', API_url, token)
+        save_response_to_log(log_folder, iter, prompt_planning, output_planning,type="else_reflection")
         chat_planning = add_response("assistant", output_planning, chat_planning)
         status = "#" * 50 + " Planning " + "#" * 50
         print(status)
@@ -653,6 +827,16 @@ while True:
         print('#' * len(status))
         completed_requirements = output_planning.split("### Completed contents ###")[-1].replace("\n", " ").strip()
          
-    os.remove(last_screenshot_file)
+    # os.remove(last_screenshot_file)
+    # if args.use_som == 1:
+    #     os.remove(last_screenshot_som_file)
+
+
+    iter += 1
+    screenshot_file = f"{log_folder}/iter_{iter}_screenshot.png"
+    screenshot_som_file = f"{log_folder}/iter_{iter}_screenshot_som.png"
+
+    os.rename(screenshot_after_file, screenshot_file)
     if args.use_som == 1:
-        os.remove(last_screenshot_som_file)
+        os.rename(screenshot_som_after_file, screenshot_som_file)
+
