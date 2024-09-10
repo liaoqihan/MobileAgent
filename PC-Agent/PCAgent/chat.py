@@ -23,6 +23,13 @@ def init_memory_chat():
     return operation_history
 
 
+def init_xl_chat():
+    operation_history = []
+    sysetm_prompt = "You are a helpful AI PC operating assistant."
+    operation_history.append(["system", [{"type": "text", "text": sysetm_prompt}]])
+    return operation_history
+
+
 def add_response_old(role, prompt, chat_history, image=None):
     new_chat_history = copy.deepcopy(chat_history)
     if image:

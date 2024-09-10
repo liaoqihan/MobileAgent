@@ -6,6 +6,9 @@ import shutil
 import argparse
 from PIL import Image, ImageDraw
 from retrying import retry
+
+from utils.oss import upload_oos_file
+from utils.xl import BizNodeResult, UploadChatResultRequest, ai_agent_rec_bug, upload_chat_result
 parser = argparse.ArgumentParser(description="PC Agent")
 parser.add_argument('--instruction', type=str, default='default')
 parser.add_argument('--icon_caption', type=int, default=1) # 0: w/o icon_caption
@@ -30,7 +33,7 @@ os.environ['api_url'] = args.api_url
 from PCAgent.api import inference_chat
 from PCAgent.text_localization import ocr
 from PCAgent.icon_localization import det
-from PCAgent.prompt import get_action_prompt, get_reflect_prompt, get_memory_prompt, get_process_prompt
+from PCAgent.prompt import get_action_prompt, get_price_validate_prompt, get_reflect_prompt, get_memory_prompt, get_process_prompt
 from PCAgent.chat import init_action_chat, init_reflect_chat, init_memory_chat, add_response
 
 from modelscope.pipelines import pipeline
@@ -192,6 +195,17 @@ def delete_part_png(directory):
                 os.remove(file_path)
                 print(f"Deleted file: {file_path}")
 
+
+def get_file_list(parent_dir,key,key2=""):
+    file_list = []
+    files = os.listdir(parent_dir)
+    for file_name in files:
+        if f"{key}" in file_name and f"{key2}" in file_name:
+            file_path = os.path.join(parent_dir, file_name)
+            if os.path.isfile(file_path):
+                file_list.append(file_path)
+    return file_list
+
 ####################################### Edit your Setting #########################################
 
 if args.instruction != 'default':
@@ -295,12 +309,15 @@ def process_image(image, query):
             },
         ]
     }]
-    response = MultiModalConversation.call(model=caption_model, messages=messages)
-    
+    call_res = MultiModalConversation.call(model=caption_model, messages=messages)
+    if not call_res:
+        print(f"not call_res process_image retry image:{image}")
+        call_res = MultiModalConversation.call(model=caption_model, messages=messages)
+        
     try:
-        response = response['output']['choices'][0]['message']['content'][0]["text"]
+        response = call_res['output']['choices'][0]['message']['content'][0]["text"]
     except Exception as e:
-        print(f"process_image response:{response} e:{e}")
+        print(f"process_image  e:{e}")
         response = "An icon."
     
     return response
@@ -617,8 +634,10 @@ def create_unique_log_folder(base_folder,instruction=""):
 #     with open(log_file, "w") as f:
 #         json.dump(data, f, indent=4)
 
-def save_response_to_log(log_folder, iter, prompt, response,type="",images=[]):
-    log_file = os.path.join(log_folder, f"iter_{iter}_{type}_gpt_log.txt")
+def save_response_to_log(log_folder, iter, prompt, response,type="",images=[],log_name=None):
+    if not log_name:
+        log_name = f"iter_{iter}_{type}_gpt_log.txt"
+    log_file = os.path.join(log_folder, log_name)
     split_str = "="*30
     content = (
         f"{split_str}Iteration{split_str}\n{iter}\n"
@@ -649,18 +668,16 @@ log_folder = create_unique_log_folder(base_log_folder,instruction=instruction)
 iter = 1
 error_flag = False
 
-
+start = time.time()
 screenshot_file = f"{log_folder}/iter_{iter}_screenshot.png"
 screenshot_som_file = f"{log_folder}/iter_{iter}_screenshot_som.png"
 
 perception_infos, width, height = get_perception_infos(screenshot_file, screenshot_som_file, font_path=args.font_path)
 shutil.rmtree(temp_file)
 os.mkdir(temp_file)
-
+bizNodeResultList = []
 while True:
     
-
-
     prompt_action = get_action_prompt(instruction, perception_infos, width, height, thought_history, summary_history, action_history, summary, action, reflection_thought, add_info, error_flag, completed_requirements, memory, args.use_som, args.icon_caption, args.location_info)
     chat_action = init_action_chat()
     
@@ -681,23 +698,43 @@ while True:
     print(output_action)
     print('#' * len(status))
 
+
     # debug
     time.sleep(5)
+    x_mark,y_mark = None,None
+    if "marked with number" in thought:
+        pattern = r'coordinates \[(\d+), (\d+)\]'
+        matches = re.search(pattern, thought)
+        if matches: 
+            print(f"优先使用标注过的元素的坐标 {x_mark},{y_mark}")
+            x_mark,y_mark = int(matches.group(1)),int(matches.group(2))
 
     if "Double Tap" in action:
         coordinate = action.split("(")[-1].split(")")[0].split(", ")
         x, y = int(coordinate[0]), int(coordinate[1])
+        if x_mark and y_mark:
+            if x!=x_mark or y!=y_mark:
+                x, y = x_mark, y_mark
+                print(f"gpt又一次不使用标注过的元素的坐标 {x},{y}  {x_mark},{y_mark}")
         tap(x, y, 2)
 
     elif "Triple Tap" in action:
         coordinate = action.split("(")[-1].split(")")[0].split(", ")
         x, y = int(coordinate[0]), int(coordinate[1])
+        if x_mark and y_mark:
+            if x!=x_mark or y!=y_mark:
+                x, y = x_mark, y_mark
+                print(f"gpt又一次不使用标注过的元素的坐标 {x},{y}  {x_mark},{y_mark}")
         tap(x, y, 3)
 
     elif "Tap" in action:
         # coordinate = action.split("(")[-1].split(")")[0].split(", ")
         coordinate = action.split(")")[0].split("(")[-1].split(",")
         x, y = int(coordinate[0]), int(coordinate[-1])
+        if x_mark and y_mark:
+            if x!=x_mark or y!=y_mark:
+                x, y = x_mark, y_mark
+                print(f"gpt又一次不使用标注过的元素的坐标 {x},{y}  {x_mark},{y_mark}")
         tap(x, y, 1)
 
     elif "Shortcut" in action:
@@ -719,6 +756,10 @@ while True:
             x, y = int(coordinate[0]), int(coordinate[1])
         except:
             x, y = extract_x_y(action)
+        if x_mark and y_mark:
+            if x!=x_mark or y!=y_mark:
+                x, y = x_mark, y_mark
+                print(f"gpt又一次不使用标注过的元素的坐标 {x},{y}  {x_mark},{y_mark}")
         if "[text]" not in action:
             text = action.split("[")[-1].split("]")[0]
         else:
@@ -729,11 +770,24 @@ while True:
     elif "Stop" in action:
         break
     if "Type" in action or "Tap" in action:
+        # mark_coordinate_on_image(screenshot_som_file,[(x,y)],action)
         mark_coordinate_on_image(screenshot_file,[(x,y)],action)
     print(f"{action} 已完成")
-    time.sleep(2)  # 等待操作执行完成
+
 
     delete_part_png(log_folder)
+
+
+    upload_img_path_list = get_file_list(parent_dir=log_folder,key=iter,key2="png")
+    upload_img_url_list = upload_oos_file(upload_img_path_list)
+    bizNodeResult = BizNodeResult(
+        description = summary,
+        actionName = action,
+        imgList = upload_img_url_list,
+        bizDesc=thought
+    )
+    bizNodeResultList.append(bizNodeResult)
+
 
     if memory_switch:
         prompt_memory = get_memory_prompt(insight)
@@ -839,4 +893,39 @@ while True:
     os.rename(screenshot_after_file, screenshot_file)
     if args.use_som == 1:
         os.rename(screenshot_som_after_file, screenshot_som_file)
+
+
+# 价格一致性的校验
+all_origin_images = get_file_list(parent_dir=log_folder,key="_screenshot.png")
+# all_origin_images = []
+price_validate_prompt = get_price_validate_prompt()
+# prompt_reqbody =  add_response("user", price_validate_prompt, chat_action, images)
+# chat_ = init_xl_chat()
+prompt_reqbody =  add_response("user", price_validate_prompt, chat_action,all_origin_images)
+res = inference_chat(prompt_reqbody, 'gpt-4o', API_url, token)
+answer = res.split("### Answer ###")[-1].replace("\n", " ").strip()
+takeTime = time.time()-start
+takeTime = f"{takeTime:.2f}"
+save_response_to_log(log_folder, iter, price_validate_prompt, res,images=all_origin_images,log_name="商品一致性_gpt.txt")
+
+uploadChatResultRequest = UploadChatResultRequest(
+    instruction = instruction,
+    bizNodesResult = bizNodeResultList,
+    takeTime=takeTime
+)
+
+if answer:
+    thought = output_reflect.split("### Thought ###")[-1].split("### Answer ###")[0].replace("\n", " ").strip()
+    uploadChatResultRequest.bizNodesResult[int(answer)-1] = thought
+
+
+
+for i, img in enumerate(all_origin_images):
+    res = ai_agent_rec_bug(img)
+    if "没有体验问题" not in res:
+        uploadChatResultRequest.bizNodesResult[i] = uploadChatResultRequest.bizNodesResult[i].replace("没有体验问题。",res)
+
+
+upload_chat_result_res = upload_chat_result(uploadChatResultRequest)
+
 

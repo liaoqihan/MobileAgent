@@ -65,6 +65,7 @@ def get_action_prompt(instruction, clickable_infos, width, height, thought_histo
     prompt += "You should prioritize interact the elements provided in the information because they contain accurate coordinates and some content which can help you.\n Unless you find the element you want to interact with is not labeled with a numeric tag and other elements with numeric tags cannot help with the task\n"
     prompt += "Note that to open an app, use the Open App action, rather than tapping the app's icon. "
     prompt += "For certain items that require selection, such as font and font size, direct input is more efficient than scrolling through choices."
+    prompt += " Based on the information provided, which includes the coordinates of the marked elements, please prioritize using the coordinates of elements marked with numbers in the screenshot for your operations. This will ensure that if your actions involve coordinates, they will be more accurate and less prone to errors"
     prompt += "You must choose one of the actions below:\n"
     prompt += "Open App (app name): If you want to open an app, you should use this action to open the app named 'app name'."
     prompt += "Tap (x, y): Tap the position (x, y) in current page. This can be used to select an item.\n"
@@ -94,8 +95,13 @@ def get_action_prompt(instruction, clickable_infos, width, height, thought_histo
     # prompt += "### Output requirements ###\n"
     # prompt += "You need to output the following content:\n"
 
+    # prompt += "### Mistakes You Have Made in the Past ###\n"
+    # prompt += "Here, I will point out the mistakes you have made in the past while executing tasks. Please avoid these errors in your responses as much as possible: \
+    # 1. You have previously provided incorrect coordinates for the corresponding mark numbers. For example, you once answered 'the first product is located at coordinates [324, 808] with mark number 212,' but the actual coordinates for mark number 212 were different, and all the coordinates for marked elements have been provided to you in the information above, you should use the coordinates I have provided directly instead of making them up."
+    # prompt += "\n\n"
+    
     prompt += "### Output format ###\n"
-    prompt += "### Thought ###\nThis is your thinking about how to proceed the next operation, please output the thoughts about the history operations explicitly.And if you do not interact the elements provided in the information, please explain why\n"
+    prompt += "### Thought ###\nThis is your thinking about how to proceed the next operation, please output the thoughts about the history operations explicitly.And if you will not interact the elements marked with number, please explain why. And if you will, please format it as follows: 'I will interact with the element marked with number {number}, located at the coordinates [{x}, {y}]' \n"
     # prompt += "You must indicate the element you are going to interact with(indicate the coordinates、mark number and content), and explain why you are performing this action."
     # prompt += "### Thought ###\nThis is your thinking about how to proceed the next operation, please output the thoughts about the history operations explicitly.\nYou must indicate the element you are going to interact with(indicate the coordinates、mark number and content), and explain why you are performing this action."
     
@@ -228,4 +234,26 @@ def get_process_prompt(instruction, thought_history, summary_history, action_his
         prompt += "### Completed contents ###\nGenerated Completed contents. Don\'t output the purpose of any operation. Just summarize the contents that have been actually completed in the ### Current operation ###.\n"
         prompt += "(Please use English to output)"
         
+    return prompt
+
+# 价格一致性的prompt
+def get_price_validate_prompt():
+    prompt = "### Background ###\n"
+    prompt += f"You have just output 'Stop' indicating that the task has been completed. Next, you need to recall the first image of the two screenshots I provided to you for each step previously (before each step, I gave you two images. use the first image which is a clean computer screenshot).\n\n"
+
+    prompt += "### Task requirements ###\n"
+    prompt += f'Based on the screenshots of the execution steps, you need to identify potential issues in this operation chain. Please focus on identifying "Price Consistency Issues". The so-called price consistency issue refers to the requirement that the price expression of the same product should be identical across different pages, including the strikethrough price.'
+    # prompt += "including consistent price expression (e.g., strikethrough prices), MOQ (Minimum Order Quantity), title, etc."
+    prompt += "\n\n"
+
+    prompt += "### Output format ###\n"
+    prompt += "### Thought ###\n"
+    prompt += f'This is your analysis related to the price consistency issue. If you identify any price consistency issue, you need to explain them in detail here.\n\n'
+
+    prompt += "### Answer ###\n"
+    prompt += f"A number or None.(The number is the image number where you identify the issue. For example, if you notice that the price expression of the same product is inconsistent between the second and fourth screenshots, you need to output 4 here.)\n\n"
+        
+    # prompt += "### Do you need me to provide the images to you again ###\n"
+    # prompt += f"As mentioned in the background, all the screenshots were provided to you earlier. Do you need me to provide all the images again in this inquiry for your analysis?\n\n"
+
     return prompt

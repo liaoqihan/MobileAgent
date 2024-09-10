@@ -162,18 +162,25 @@ def inference_chat_azure(chat, model):
     for role, content in chat:
         data["messages"].append({"role": role, "content": content})
 
-    res = client.chat.completions.create(
+    chat_completion = client.chat.completions.create(
         model=ICBUGPTModels.GPT_4_O.value,
         messages=data["messages"],
         timeout=600,
         max_tokens=4096
     )
     try:
-        res_content = res.choices[0].message.content
+        res_content = chat_completion.choices[0].message.content
+        usage = chat_completion.usage
+        tokens_info = {
+            "total_tokens": usage.total_tokens,
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens
+        }
+        print(f"tokens_info: {tokens_info}")
     except Exception as e:
-        print(f"inference_chat_azure Error:{e} \n res:{res} ")
-        raise Exception(f"inference_chat_azure Error:{e} \n res:{res} ")
+        print(f"inference_chat_azure Error:{e} \n res:{chat_completion} ")
+        raise Exception(f"inference_chat_azure Error:{e} \n res:{chat_completion} ")
     if not res_content:
-        print(f"inference_chat_azure res_content empty res:{res}")
-        raise Exception(f"inference_chat_azure res_content empty res:{res}")
+        print(f"inference_chat_azure res_content empty res:{chat_completion}")
+        raise Exception(f"inference_chat_azure res_content empty res:{chat_completion}")
     return res_content
