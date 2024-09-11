@@ -24,6 +24,9 @@ parser.add_argument('--add_info', type=str, default='')
 parser.add_argument('--disable_reflection', action='store_true')
 parser.add_argument("--empId", type=str)
 parser.add_argument("--api_key", type=str)
+parser.add_argument("--caption_call_method", type=str)
+parser.add_argument("--caption_model", type=str)
+
 args = parser.parse_args()
 
 os.environ['empId'] = args.empId
@@ -33,8 +36,8 @@ os.environ['api_url'] = args.api_url
 from PCAgent.api import inference_chat
 from PCAgent.text_localization import ocr
 from PCAgent.icon_localization import det
-from PCAgent.prompt import get_action_prompt, get_price_validate_prompt, get_reflect_prompt, get_memory_prompt, get_process_prompt
-from PCAgent.chat import init_action_chat, init_reflect_chat, init_memory_chat, add_response
+from PCAgent.prompt import PriceValidateResp, get_action_prompt, get_price_validate_json_prompt, get_price_validate_prompt, get_reflect_prompt, get_memory_prompt, get_process_prompt
+from PCAgent.chat import init_action_chat, init_reflect_chat, init_memory_chat, add_response, init_xl_chat
 
 from modelscope.pipelines import pipeline
 from modelscope.utils.constant import Tasks
@@ -102,7 +105,7 @@ def draw_coordinates_boxes_on_image(image_path, coordinates, output_image_path, 
 
 
 
-
+caption_call_method = args.caption_call_method
 
 if args.pc_type == "mac":
     ctrl_key = "command"
@@ -198,7 +201,7 @@ def delete_part_png(directory):
 
 def get_file_list(parent_dir,key,key2=""):
     file_list = []
-    files = os.listdir(parent_dir)
+    files = sorted(os.listdir(parent_dir))
     for file_name in files:
         if f"{key}" in file_name and f"{key2}" in file_name:
             file_path = os.path.join(parent_dir, file_name)
@@ -222,10 +225,10 @@ API_url = args.api_url
 token = args.api_token
 
 # Choose between "api" and "local". api: use the qwen api. local: use the local qwen checkpoint
-caption_call_method = "api"
 
 # Choose between "qwen-vl-plus" and "qwen-vl-max" if use api method. Choose between "qwen-vl-chat" and "qwen-vl-chat-int4" if use local method.
-caption_model = "qwen-vl-max"
+# caption_model = "qwen-vl-max"
+caption_model = args.caption_model
 
 # If you choose the api caption call method, input your Qwen api here
 qwen_api = args.qwen_api
@@ -291,6 +294,11 @@ def generate_local(tokenizer, model, image_file, query):
         {'image': image_file},
         {'text': query},
     ])
+    # create a "dummy" attention mask to pass to the model
+    encoded_query = tokenizer(query, return_tensors='pt')
+    input_ids = encoded_query['input_ids']
+    attention_mask = encoded_query['attention_mask']
+    # dummy_attention_mask = torch.ones(input_ids.shape, dtype=torch.long)
     response, _ = model.chat(tokenizer, query=query, history=None)
     return response
 
@@ -309,12 +317,9 @@ def process_image(image, query):
             },
         ]
     }]
-    call_res = MultiModalConversation.call(model=caption_model, messages=messages)
-    if not call_res:
-        print(f"not call_res process_image retry image:{image}")
-        call_res = MultiModalConversation.call(model=caption_model, messages=messages)
         
     try:
+        call_res = MultiModalConversation.call(model=caption_model, messages=messages)
         response = call_res['output']['choices'][0]['message']['content'][0]["text"]
     except Exception as e:
         print(f"process_image  e:{e}")
@@ -531,21 +536,34 @@ def get_perception_infos(screenshot_file, screenshot_som_file, font_path):
     return perception_infos, total_width, total_height
 
 ### Load caption model ###
-device = "cuda"
+device = "mps"
 torch.manual_seed(1234)
+local_cache_dir = "./model_cache"
+
+if not os.path.exists(local_cache_dir):
+    os.makedirs(local_cache_dir)
+
 if caption_call_method == "local":
     if caption_model == "qwen-vl-chat":
-        model_dir = snapshot_download('qwen/Qwen-VL-Chat', revision='v1.1.0')
+        model_dir = os.path.join(local_cache_dir, "Qwen-VL-Chat")
+        if not os.path.exists(model_dir):
+            print("Downloading Qwen-VL-Chat model...")
+            model_dir = snapshot_download('qwen/Qwen-VL-Chat', revision='v1.1.0', cache_dir=local_cache_dir)
         model = AutoModelForCausalLM.from_pretrained(model_dir, device_map=device, trust_remote_code=True).eval()
         model.generation_config = GenerationConfig.from_pretrained(model_dir, trust_remote_code=True)
     elif caption_model == "qwen-vl-chat-int4":
-        qwen_dir = snapshot_download("qwen/Qwen-VL-Chat-Int4", revision='v1.0.0')
-        model = AutoModelForCausalLM.from_pretrained(qwen_dir, device_map=device, trust_remote_code=True,use_safetensors=True).eval()
-        model.generation_config = GenerationConfig.from_pretrained(qwen_dir, trust_remote_code=True, do_sample=False)
+        model_dir = os.path.join(local_cache_dir, "Qwen-VL-Chat-Int4")
+        if not os.path.exists(model_dir):
+            print("Downloading Qwen-VL-Chat-Int4 model...")
+            model_dir = snapshot_download("qwen/Qwen-VL-Chat-Int4", revision='v1.0.0', cache_dir=local_cache_dir)
+        model = AutoModelForCausalLM.from_pretrained(model_dir, device_map=device, trust_remote_code=True, use_safetensors=True).eval()
+        model.generation_config = GenerationConfig.from_pretrained(model_dir, trust_remote_code=True, do_sample=False)
     else:
         print("If you choose local caption method, you must choose the caption model from \"Qwen-vl-chat\" and \"Qwen-vl-chat-int4\"")
         exit(0)
-    tokenizer = AutoTokenizer.from_pretrained(qwen_dir, trust_remote_code=True)
+    
+    tokenizer = AutoTokenizer.from_pretrained(model_dir, trust_remote_code=True)
+
 elif caption_call_method == "api":
     pass
 else:
@@ -554,6 +572,11 @@ else:
 
 
 ### Load ocr and icon detection model ###
+# groundingdino_dir = os.path.join(local_cache_dir, "AI-ModelScope")
+# if not os.path.exists(groundingdino_dir):
+#     print("Downloading AI-ModelScope/GroundingDINO model...")
+#     groundingdino_dir = snapshot_download('AI-ModelScope/GroundingDINO', revision='v1.0.0', cache_dir=local_cache_dir)
+# groundingdino_model = pipeline('grounding-dino-task', model=groundingdino_dir)
 groundingdino_dir = snapshot_download('AI-ModelScope/GroundingDINO', revision='v1.0.0')
 groundingdino_model = pipeline('grounding-dino-task', model=groundingdino_dir)
 ocr_detection = pipeline(Tasks.ocr_detection, model='damo/cv_resnet18_ocr-detection-line-level_damo')
@@ -676,6 +699,9 @@ perception_infos, width, height = get_perception_infos(screenshot_file, screensh
 shutil.rmtree(temp_file)
 os.mkdir(temp_file)
 bizNodeResultList = []
+all_origin_images_url = []
+need_stop = False
+# chat_action = init_action_chat()
 while True:
     
     prompt_action = get_action_prompt(instruction, perception_infos, width, height, thought_history, summary_history, action_history, summary, action, reflection_thought, add_info, error_flag, completed_requirements, memory, args.use_som, args.icon_caption, args.location_info)
@@ -768,7 +794,7 @@ while True:
         tap_type_enter(x, y, text)
         
     elif "Stop" in action:
-        break
+        need_stop = True
     if "Type" in action or "Tap" in action:
         # mark_coordinate_on_image(screenshot_som_file,[(x,y)],action)
         mark_coordinate_on_image(screenshot_file,[(x,y)],action)
@@ -780,6 +806,7 @@ while True:
 
     upload_img_path_list = get_file_list(parent_dir=log_folder,key=iter,key2="png")
     upload_img_url_list = upload_oos_file(upload_img_path_list)
+    all_origin_images_url.append(upload_img_url_list[-1])
     bizNodeResult = BizNodeResult(
         description = summary,
         actionName = action,
@@ -788,6 +815,8 @@ while True:
     )
     bizNodeResultList.append(bizNodeResult)
 
+    if need_stop:
+        break
 
     if memory_switch:
         prompt_memory = get_memory_prompt(insight)
@@ -896,17 +925,24 @@ while True:
 
 
 # 价格一致性的校验
+
 all_origin_images = get_file_list(parent_dir=log_folder,key="_screenshot.png")
-# all_origin_images = []
-price_validate_prompt = get_price_validate_prompt()
-# prompt_reqbody =  add_response("user", price_validate_prompt, chat_action, images)
-# chat_ = init_xl_chat()
-prompt_reqbody =  add_response("user", price_validate_prompt, chat_action,all_origin_images)
+
+price_validate_prompt = get_price_validate_json_prompt(width,height,instruction,img_num=iter)
+xl_chat = init_xl_chat(in_json=True)
+prompt_reqbody =  add_response("user", price_validate_prompt, xl_chat,all_origin_images)
+res = inference_chat(prompt_reqbody, 'gpt-4o', API_url, token,response_format=PriceValidateResp)
+
+price_validate_prompt = get_price_validate_prompt(width,height,instruction,img_num=iter)
+xl_chat = init_xl_chat()
+prompt_reqbody =  add_response("user", price_validate_prompt, xl_chat,all_origin_images)
 res = inference_chat(prompt_reqbody, 'gpt-4o', API_url, token)
+save_response_to_log(log_folder, iter, price_validate_prompt, res,images=all_origin_images,log_name="商品一致性_gpt.txt")
+
 answer = res.split("### Answer ###")[-1].replace("\n", " ").strip()
 takeTime = time.time()-start
 takeTime = f"{takeTime:.2f}"
-save_response_to_log(log_folder, iter, price_validate_prompt, res,images=all_origin_images,log_name="商品一致性_gpt.txt")
+
 
 uploadChatResultRequest = UploadChatResultRequest(
     instruction = instruction,
@@ -914,18 +950,25 @@ uploadChatResultRequest = UploadChatResultRequest(
     takeTime=takeTime
 )
 
-if answer:
-    thought = output_reflect.split("### Thought ###")[-1].split("### Answer ###")[0].replace("\n", " ").strip()
-    uploadChatResultRequest.bizNodesResult[int(answer)-1] = thought
+if answer.isdigit() and (int(answer)-1) >= 0:
+    thought = res.split("### Thought ###")[-1].split("### Answer ###")[0].strip()
+    uploadChatResultRequest.bizNodesResult[int(answer)-1].driverAssert = "###价格一致性问题###\n" + thought + "\n"
 
 
 
-for i, img in enumerate(all_origin_images):
-    res = ai_agent_rec_bug(img)
+for i,url in enumerate(all_origin_images_url):
+    res = ai_agent_rec_bug(image_urls=url)
     if "没有体验问题" not in res:
-        uploadChatResultRequest.bizNodesResult[i] = uploadChatResultRequest.bizNodesResult[i].replace("没有体验问题。",res)
+        uploadChatResultRequest.bizNodesResult[i].driverAssert += f"###其他体验问题###\n{res}"
 
 
 upload_chat_result_res = upload_chat_result(uploadChatResultRequest)
 
 
+if __name__ == "__main__":
+
+    all_origin_images = ["log/请你将这个页面的第一个商品记忆为商品A 点击这个商品A会进入到下一个页面 你需要不断在新的页面点击商品A直至新的页面为商详页 _20240911145706/iter_3_screenshot_som.png"]
+    price_validate_prompt = get_price_validate_json_prompt(width=1,height=1,instruction="11",img_num=1)
+    xl_chat = init_xl_chat(in_json=True)
+    prompt_reqbody =  add_response("user", price_validate_prompt, chat_action,all_origin_images)
+    res = inference_chat(prompt_reqbody, 'gpt-4o', API_url, token,response_format=PriceValidateResp)

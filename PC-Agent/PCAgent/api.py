@@ -47,8 +47,7 @@ def encode_image(image_path):
     
     
 @print_execution_time
-@retry(stop_max_attempt_number=5, wait_exponential_multiplier=1000)
-def inference_chat(chat, model, api_url, token,use_qa=True):
+def inference_chat(chat, model, api_url, token,use_qa=True,response_format=None):
     if not use_qa:
         headers = {
             "Content-Type": "application/json",
@@ -86,7 +85,7 @@ def inference_chat(chat, model, api_url, token,use_qa=True):
     # prompt, images = extract_content(chat)
     # return get_model_response(token,prompt,images)
 
-    return inference_chat_azure(chat, model)
+    return inference_chat_azure(chat, model,response_format=response_format)
     
 def extract_content(obj):
     texts = []
@@ -120,6 +119,7 @@ class ICBUGPTModels(Enum):
     GPT_4_TURBO = "gpt-4-turbo"
     GPT_4_VISION = "gpt-4-vision"
     GPT_4_O = "gpt-4o"
+    GPT_4_O_0806 = "gpt-4o-0806"
 
 def convert_model_name(input_model_name: str) -> str:
     mapping = {
@@ -140,7 +140,7 @@ client = AzureOpenAI(
     default_headers={"empId": os.getenv('empId')},
     azure_endpoint=os.getenv('api_url'),
     api_key = os.getenv('api_key'),
-    api_version = "2024-03-01-preview",
+    api_version = "2024-06-01",
 )
 
 def encode_image(image_path):
@@ -148,12 +148,12 @@ def encode_image(image_path):
         return base64.b64encode(image_file.read()).decode('utf-8')
 
 @retry(stop_max_attempt_number=5, wait_exponential_multiplier=1000)
-def inference_chat_azure(chat, model):
+def inference_chat_azure(chat, model,response_format=None):
 
     data = {
-        "model": model,
+        "model": ICBUGPTModels.GPT_4_O_0806.value,
         "messages": [],
-        "max_tokens": 2048,
+        "max_tokens": 4096,
         'temperature': 0.0,
         "seed": 1234
     }
@@ -161,15 +161,23 @@ def inference_chat_azure(chat, model):
     # 将prompt塞进request data的message数组中
     for role, content in chat:
         data["messages"].append({"role": role, "content": content})
-
-    chat_completion = client.chat.completions.create(
-        model=ICBUGPTModels.GPT_4_O.value,
-        messages=data["messages"],
-        timeout=600,
-        max_tokens=4096
-    )
+    if not response_format:
+        chat_completion = client.chat.completions.create(
+            model=ICBUGPTModels.GPT_4_O_0806.value,
+            messages=data["messages"],
+            timeout=600,
+            max_tokens=4096
+        )
+    else:
+        chat_completion = client.beta.chat.completions.parse(
+            model=ICBUGPTModels.GPT_4_O_0806.value,
+            messages=data["messages"],
+            timeout=600,
+            max_tokens=4096,
+            response_format=response_format
+        )
     try:
-        res_content = chat_completion.choices[0].message.content
+        res_content = chat_completion.choices[0].message.content if not response_format else chat_completion.choices[0].message.parsed
         usage = chat_completion.usage
         tokens_info = {
             "total_tokens": usage.total_tokens,

@@ -1,4 +1,7 @@
 # PC
+from openai import BaseModel
+
+
 def get_action_prompt(instruction, clickable_infos, width, height, thought_history, summary_history, action_history, last_summary, last_action, reflection_thought, add_info, error_flag, completed_content, memory, use_som, icon_caption, location_info):
     prompt = "### Background ###\n"
     if use_som == 1:
@@ -106,7 +109,7 @@ def get_action_prompt(instruction, clickable_infos, width, height, thought_histo
     # prompt += "### Thought ###\nThis is your thinking about how to proceed the next operation, please output the thoughts about the history operations explicitly.\nYou must indicate the element you are going to interact with(indicate the coordinates、mark number and content), and explain why you are performing this action."
     
     prompt += "### Action ###\nOpen App () or Tap () or Double Tap () or Triple Tap () or Shortcut () or Press() or Type () or Tell () or Stop. Only one action can be output at one time.\n"
-    prompt += "### Operation ###\nThis is a one sentence summary of this operation."
+    prompt += "### Operation ###\nThis is a one very short sentence summary of this operation."
     prompt += "\n\n"
 
     # prompt += "Your output consists of the following three parts:\n"
@@ -237,13 +240,29 @@ def get_process_prompt(instruction, thought_history, summary_history, action_his
     return prompt
 
 # 价格一致性的prompt
-def get_price_validate_prompt():
+def get_price_validate_prompt(width,height,instruction,img_num):
     prompt = "### Background ###\n"
-    prompt += f"You have just output 'Stop' indicating that the task has been completed. Next, you need to recall the first image of the two screenshots I provided to you for each step previously (before each step, I gave you two images. use the first image which is a clean computer screenshot).\n\n"
+    # prompt += f"You have just output 'Stop' indicating that the task has been completed. Next, you need to recall the first image of the two screenshots I provided to you for each step previously (before each step, I gave you two images. use the first image which is a clean computer screenshot).\n\n"
+    prompt += f"I just completed a task named: '{instruction}'. Here are {img_num} screenshots after completing each step of the task. Each image's width is {width} pixels and height is {height} pixels. \n\n"
+
 
     prompt += "### Task requirements ###\n"
-    prompt += f'Based on the screenshots of the execution steps, you need to identify potential issues in this operation chain. Please focus on identifying "Price Consistency Issues". The so-called price consistency issue refers to the requirement that the price expression of the same product should be identical across different pages, including the strikethrough price.'
+    prompt += f'Based on the screenshots of the execution steps, you need to identify potential issues in this operation chain. Please focus on identifying "Price Consistency Issues". The so-called price consistency issue refers to the requirement that the origin price and the discounted price expression of the same product should be identical across different pages.You can refer to the examples given below, but if you encounter a case that is not mentioned in the examples, you need to make your own judgment.'
     # prompt += "including consistent price expression (e.g., strikethrough prices), MOQ (Minimum Order Quantity), title, etc."
+    prompt += "\n\n"
+
+
+    prompt += "### Example ###\n"
+    prompt += """
+Here are some examples to help you provide a more accurate answer:
+    Cases that belong to Price Consistency Issues:
+        1.Strikethrough price display on different pages: The same product has a strikethrough price displayed on one page but not on another.
+        2.Inconsistent currency symbol: The same product has a currency symbol on one page but not on another (leading to inconsistent price representation).
+        3.Inconsistent price format: The same product has a price of 1,000.00 on one page but 1000.00 on another (inconsistent price formatting).
+        4.Inconsistent multiple price display: The same product shows multiple prices based on purchase quantity on the product detail page, but only shows one price on other pages, and this price is not the one corresponding to the lowest purchase quantity from the product detail page.
+    Cases that do not belong to Price Consistency Issues:
+        1.Consistent lowest price display: The same product shows multiple prices based on purchase quantity on the product detail page, and only shows one price on other pages, and this price is the one corresponding to the lowest purchase quantity from the product detail page.
+"""
     prompt += "\n\n"
 
     prompt += "### Output format ###\n"
@@ -257,3 +276,27 @@ def get_price_validate_prompt():
     # prompt += f"As mentioned in the background, all the screenshots were provided to you earlier. Do you need me to provide all the images again in this inquiry for your analysis?\n\n"
 
     return prompt
+
+
+def get_price_validate_json_prompt(width,height,instruction,img_num):
+    prompt = "### Background ###\n"
+    # prompt += f"You have just output 'Stop' indicating that the task has been completed. Next, you need to recall the first image of the two screenshots I provided to you for each step previously (before each step, I gave you two images. use the first image which is a clean computer screenshot).\n\n"
+    prompt += f"I just completed a task named: '{instruction}'. Here are {img_num} screenshots after completing each step of the task. Each image's width is {width} pixels and height is {height} pixels. \n\n"
+
+
+    prompt += "### Task requirements ###\n"
+    prompt += f'Based on the screenshots of the execution steps, you need to identify potential issues in this operation chain. Please focus on identifying "Price Consistency Issues". The so-called price consistency issue refers to the requirement that the price expression of the same product should be identical across different pages, including the strikethrough price.'
+    # prompt += "including consistent price expression (e.g., strikethrough prices), MOQ (Minimum Order Quantity), title, etc."
+    prompt += "\n\n"
+
+    prompt += "### Output As Json ###\n"
+    prompt += """
+        {
+            "Thought": str #'This is your analysis related to the price consistency issue. If you identify any price consistency issue, you need to explain them in detail here.',
+            “Answer”: int # "A number or None.(The number is the image number where you identify the issue. For example, if you notice that the price expression of the same product is inconsistent between the second and fourth screenshots, you need to output 4 here.)"
+        }
+"""
+    return prompt
+class PriceValidateResp(BaseModel):
+    Thought: str
+    Answer: int

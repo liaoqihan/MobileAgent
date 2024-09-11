@@ -7,3 +7,5 @@ __pycache__/
 .vscode/launch.json
 log/
 tmp_lqh/
+model_cache/
+.DS_Store

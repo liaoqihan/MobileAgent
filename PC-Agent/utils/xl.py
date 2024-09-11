@@ -3,7 +3,6 @@ from typing import List, Optional
 import uuid
 import requests
 import json
-from dataclasses import dataclass, asdict
 def generate_session_id():
     return str(uuid.uuid4())
 
@@ -75,7 +74,7 @@ class BizNodeResult:
     imgList: List[str]
     bizTag: str = "DEFAULT"
     id: int = generate_unique_id()
-    actionType: str = ""
+    actionType: str = "NORMAL_CLICK"
     driverAssert: str = "没有体验问题。"
     result: str = "INIT"
     bizDesc: Optional[str] = None 
@@ -91,7 +90,7 @@ class UploadChatResultRequest:
     bizNodesResult: List[BizNodeResult]
     takeTime: str = "300.00"
     exception: str = ""
-    taskRecordId: int = 2885 # https://pre-xl.alibaba-inc.com/#/task/taskDetail?id=2885&tab=taskRecord
+    taskRecordId: int = 150966 # https://pre-xl.alibaba-inc.com/#/task/taskDetail?id=2886&tab=taskRecord&taskRecordId=150966
     testCaseHistoryId: Optional[str] = None
 
 
@@ -99,10 +98,19 @@ def upload_chat_result(uploadChatResultRequest):
 
     url = "http://pre-xl.alibaba-inc.com/api/uploadChatResult"
     req_dict = asdict(uploadChatResultRequest)
-    print(json.dumps(req_dict,ensure_ascii=False))
+    print(f"upload_chat_result req:\n {json.dumps(req_dict,ensure_ascii=False)}")
     response = requests.post(url, json=req_dict)
-    if not response.json().get("success"):
-        raise Exception(f"upload_chat_result failed response:{response}")
+    is_success = False
+    try:
+        is_success = response.json().get("success")
+        print(f"upload_chat_result response:\n {response.json()}")
+    except Exception as e:
+        pass
+
+    if not is_success:
+        raise Exception(f"upload_chat_result failed response:{response.text}")
+    historyId = response.json().get("data")
+    print(f"upload_chat_result url: https://pre-xl.alibaba-inc.com/#/task/testCaseHistoryDetail?historyId={historyId}")
     return response
 
 

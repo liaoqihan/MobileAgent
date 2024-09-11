@@ -2,9 +2,11 @@ import copy
 from PCAgent.api import encode_image
 
 
-def init_action_chat():
+def init_action_chat(in_cn=True):
     operation_history = []
     sysetm_prompt = "You are a helpful AI PC operating assistant. You need to help me operate the PC to complete the user\'s instruction."
+    if in_cn:
+        sysetm_prompt += "All your response should be in Chinese."
     operation_history.append(["system", [{"type": "text", "text": sysetm_prompt}]])
     return operation_history
 
@@ -23,9 +25,13 @@ def init_memory_chat():
     return operation_history
 
 
-def init_xl_chat():
+def init_xl_chat(in_json=False,in_cn=True):
     operation_history = []
-    sysetm_prompt = "You are a helpful AI PC operating assistant."
+    sysetm_prompt = "You are a helpful AI test engineer for a B2B ecommerce platform named 'Alibaba.com'."
+    if in_json:
+        sysetm_prompt +="Your all responses will be in JSON format."
+    if in_cn:
+        sysetm_prompt += "All your response should be in Chinese."
     operation_history.append(["system", [{"type": "text", "text": sysetm_prompt}]])
     return operation_history
 

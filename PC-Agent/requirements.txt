@@ -134,3 +134,15 @@ xxhash==3.4.1
 yapf==0.40.2
 yarl==1.9.4
 zipp==3.19.2
+
+
+# local使用
+# transformers_stream_generator
+
+# accelerate
+
+# optimum
+
+# #BUILD_CUDA_EXT=0 pip install auto-gptq
+
+# tiktoken
