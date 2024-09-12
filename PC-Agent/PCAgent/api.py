@@ -147,7 +147,7 @@ def encode_image(image_path):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode('utf-8')
 
-@retry(stop_max_attempt_number=5, wait_exponential_multiplier=1000)
+@retry(stop_max_attempt_number=1, wait_exponential_multiplier=1000)
 def inference_chat_azure(chat, model,response_format=None):
 
     data = {
@@ -161,23 +161,25 @@ def inference_chat_azure(chat, model,response_format=None):
     # 将prompt塞进request data的message数组中
     for role, content in chat:
         data["messages"].append({"role": role, "content": content})
-    if not response_format:
-        chat_completion = client.chat.completions.create(
-            model=ICBUGPTModels.GPT_4_O_0806.value,
-            messages=data["messages"],
-            timeout=600,
-            max_tokens=4096
-        )
-    else:
-        chat_completion = client.beta.chat.completions.parse(
-            model=ICBUGPTModels.GPT_4_O_0806.value,
-            messages=data["messages"],
-            timeout=600,
-            max_tokens=4096,
-            response_format=response_format
-        )
     try:
+        if not response_format:
+            chat_completion = client.chat.completions.create(
+                model=ICBUGPTModels.GPT_4_O_0806.value,
+                messages=data["messages"],
+                timeout=600,
+                max_tokens=4096
+            )
+        else:
+            chat_completion = client.beta.chat.completions.parse(
+                model=ICBUGPTModels.GPT_4_O_0806.value,
+                messages=data["messages"],
+                timeout=600,
+                max_tokens=4096,
+                response_format=response_format
+            )
+
         res_content = chat_completion.choices[0].message.content if not response_format else chat_completion.choices[0].message.parsed
+
         usage = chat_completion.usage
         tokens_info = {
             "total_tokens": usage.total_tokens,
@@ -185,10 +187,13 @@ def inference_chat_azure(chat, model,response_format=None):
             "completion_tokens": usage.completion_tokens
         }
         print(f"tokens_info: {tokens_info}")
+        if not res_content:
+            print(f"inference_chat_azure res_content empty res:{chat_completion}")
+            raise Exception(f"inference_chat_azure res_content empty res:{chat_completion}")
     except Exception as e:
-        print(f"inference_chat_azure Error:{e} \n res:{chat_completion} ")
-        raise Exception(f"inference_chat_azure Error:{e} \n res:{chat_completion} ")
-    if not res_content:
-        print(f"inference_chat_azure res_content empty res:{chat_completion}")
-        raise Exception(f"inference_chat_azure res_content empty res:{chat_completion}")
+        print(f"inference_chat_azure Error:{e} \n ")
+        raise Exception(f"inference_chat_azure Error:{e} \n")
+
     return res_content
+
+

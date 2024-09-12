@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field, asdict
-from typing import List, Optional
+import os
+from typing import Dict, List, Optional, Union
 import uuid
 import requests
 import json
@@ -12,7 +13,7 @@ def generate_unique_id(len=64):
 image_urls = [
 "http://b2b-algo-test.oss-cn-hangzhou-zmf.aliyuncs.com/lqh/%E9%A6%96%E9%A1%B5%E8%BF%9B%E5%85%A5'Supplier%20leaderboard'%E4%B9%9D%E6%9C%88%E5%A4%A7%E4%BF%83%E4%BC%9A%E5%9C%BA%20%E9%80%89%E6%8B%A9%E4%B8%80%E4%B8%AA%E5%95%86%E5%93%81%E4%B8%8B%E5%8D%95%EF%BC%88%E5%A6%82%E6%9E%9C%E6%97%A0%E6%B3%95%E4%B8%8B%E5%8D%95%20%E5%88%99%E6%B2%9F%E9%80%9A%E8%AF%A2%E7%9B%98%EF%BC%89_20240906104205/iter_1_screenshot.png"
 ]
-
+aistudio_ak = os.getenv('aistudio_ak')
 def ai_agent_rec_bug(image_urls=image_urls, country="美国", language="英语", currency="USD"):
     """
     agent for 获取点击坐标
@@ -21,7 +22,7 @@ def ai_agent_rec_bug(image_urls=image_urls, country="美国", language="英语",
     headers = {
         "accept": "*/*",
         "Content-Type": "application/json",
-        "X-AK": '35200673339ea52b992a0f68e5b45bbc'
+        "X-AK": aistudio_ak
     }
     session_id = generate_session_id()
 
@@ -75,7 +76,7 @@ class BizNodeResult:
     bizTag: str = "DEFAULT"
     id: int = generate_unique_id()
     actionType: str = "NORMAL_CLICK"
-    driverAssert: str = "没有体验问题。"
+    driverAssert: str = ""
     result: str = "INIT"
     bizDesc: Optional[str] = None 
     dataList: Optional[List] = None
@@ -122,3 +123,26 @@ if __name__ == "__main__":
         results[i] = res
     with open("tmp.json", "w") as file:
         json.dump(results, file, indent=4, ensure_ascii=False)
+
+
+@dataclass
+class WorkspaceAiReqBody:
+    appCode: str  # 应用code，必填
+    pageNo: int  # 页码，必填
+    pageSize: int  # 数量，必填
+
+    empIds: Optional[List[str]] = None  # 员工工号，非必填
+    endTime: Optional[str] = None  # 结束时间，非必填
+    startTime: Optional[str] = None  # 开始时间，格式：yyyy-MM-dd HH:mm:ss，非必填
+    messageIds: Optional[List[str]] = None  # 一个对话的消息id或者traceId，非必填
+    source: Optional[List[str]] = None  # 来源（DEBUG：调试，API：API接口，WEB：分享页面，IDEAS：IDEAs分享页面，DING：钉钉机器人），非必填
+    sessionId: Optional[str] = None  # 会话记录id，非必填
+    orderBy: str = "DESC"  # 排序，非必填，默认倒序 ASC:升序 DESC:倒序
+
+
+def workspace_ai_request(appCode,appVersion):
+    url = f"https://aistudio.alibaba-inc.com/api/aiapp/run/{appCode}/{appVersion}"
+    header = {
+        "X-AK":aistudio_ak
+    }
+    WorkspaceAiReqBody

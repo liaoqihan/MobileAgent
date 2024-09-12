@@ -26,12 +26,13 @@ parser.add_argument("--empId", type=str)
 parser.add_argument("--api_key", type=str)
 parser.add_argument("--caption_call_method", type=str)
 parser.add_argument("--caption_model", type=str)
-
+parser.add_argument("--aistudio_ak", type=str)
 args = parser.parse_args()
 
 os.environ['empId'] = args.empId
 os.environ['api_key'] = args.api_key
 os.environ['api_url'] = args.api_url
+os.environ['aistudio_ak'] = args.aistudio_ak
 
 from PCAgent.api import inference_chat
 from PCAgent.text_localization import ocr
@@ -928,10 +929,10 @@ while True:
 
 all_origin_images = get_file_list(parent_dir=log_folder,key="_screenshot.png")
 
-price_validate_prompt = get_price_validate_json_prompt(width,height,instruction,img_num=iter)
-xl_chat = init_xl_chat(in_json=True)
-prompt_reqbody =  add_response("user", price_validate_prompt, xl_chat,all_origin_images)
-res = inference_chat(prompt_reqbody, 'gpt-4o', API_url, token,response_format=PriceValidateResp)
+# price_validate_prompt = get_price_validate_json_prompt(width,height,instruction,img_num=iter)
+# xl_chat = init_xl_chat(in_json=True)
+# prompt_reqbody =  add_response("user", price_validate_prompt, xl_chat,all_origin_images)
+# res = inference_chat(prompt_reqbody, 'gpt-4o', API_url, token,response_format=PriceValidateResp)
 
 price_validate_prompt = get_price_validate_prompt(width,height,instruction,img_num=iter)
 xl_chat = init_xl_chat()
@@ -949,26 +950,26 @@ uploadChatResultRequest = UploadChatResultRequest(
     bizNodesResult = bizNodeResultList,
     takeTime=takeTime
 )
+has_price_issue = answer.isdigit() and (int(answer)-1) >= 0
+price_validate_str = "#######\n\n"
+price_validate_str += f"是否有价格一致性问题: {has_price_issue}\n\n"
+if has_price_issue:
+    # thought = res.split("### Thought ###")[-1].split("### Answer ###")[0].strip()
+    thought = res.split("### 思考 ###")[-1].split("### 回答 ###")[0].strip()
+    price_validate_str += f"{thought}"
 
-if answer.isdigit() and (int(answer)-1) >= 0:
-    thought = res.split("### Thought ###")[-1].split("### Answer ###")[0].strip()
-    uploadChatResultRequest.bizNodesResult[int(answer)-1].driverAssert = "###价格一致性问题###\n" + thought + "\n"
-
-
+price_validate_str += "#######\n"
+uploadChatResultRequest.bizNodesResult[int(answer)-1].driverAssert = price_validate_str
 
 for i,url in enumerate(all_origin_images_url):
+    validate_str = "#######\n\n"
+
     res = ai_agent_rec_bug(image_urls=url)
-    if "没有体验问题" not in res:
-        uploadChatResultRequest.bizNodesResult[i].driverAssert += f"###其他体验问题###\n{res}"
+    has_issue = "没有体验问题" not in res
+    validate_str += f"是否有其他问题: {has_issue}\n\n"
+    if has_issue:
+        validate_str += f"{res}\n"
+    uploadChatResultRequest.bizNodesResult[i].driverAssert += validate_str
 
 
 upload_chat_result_res = upload_chat_result(uploadChatResultRequest)
-
-
-if __name__ == "__main__":
-
-    all_origin_images = ["log/请你将这个页面的第一个商品记忆为商品A 点击这个商品A会进入到下一个页面 你需要不断在新的页面点击商品A直至新的页面为商详页 _20240911145706/iter_3_screenshot_som.png"]
-    price_validate_prompt = get_price_validate_json_prompt(width=1,height=1,instruction="11",img_num=1)
-    xl_chat = init_xl_chat(in_json=True)
-    prompt_reqbody =  add_response("user", price_validate_prompt, chat_action,all_origin_images)
-    res = inference_chat(prompt_reqbody, 'gpt-4o', API_url, token,response_format=PriceValidateResp)
