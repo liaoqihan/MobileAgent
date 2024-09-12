@@ -321,73 +321,29 @@ class PriceValidateResp(BaseModel):
     Answer: int
 
 
-response_format = {
+price_validate_response_format = {
     "type": "json_schema",
     "json_schema": {
-        "type": "object",
-        "properties": {
-            "思考": {
-                "type": "string",
-                "description": "This is your analysis related to the price consistency issue. If you identify any price consistency issue, you need to explain them in detail here."
-            },
-            "回答": {
-                "type": "int",
-                "description": "A number or None.(The number is the image number where you identify the issue. For example, if you notice that the price expression of the same product is inconsistent between the second and fourth screenshots, you need to output 4 here.)",
-            }
-        },
-        "additionalProperties": False,
-        "required": [
-            "思考", "回答"
-        ]
-    }
-}
-response_format = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "math_response",
+        "name": "the_price_consistency_issue",
         "schema": {
-                "type": "object",
-                "properties": {
-                    "steps": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "explanation": {"type": "string"},
-                                "output": {"type": "string"}
-                            },
-                            "required": ["explanation", "output"],
-                            "additionalProperties": False
-                        }
-                    },
-                    "final_answer": {"type": "string"}
+            "type": "object",
+            "properties": {
+                "Thought": {
+                    "type": "string",
+                    "description": "This is your analysis related to the price consistency issue. If you identify any price consistency issue, you need to explain them in detail here."
                 },
-            "required": ["steps", "final_answer"],
-            "additionalProperties": False
-        },
-        "strict": True
-    }
-}
-
-response_format = {
-    "type": "json_schema",
-    "json_schema": {
-            "name": "find price consistency issue",
-            "schema": {
-                "type": "object",
-                "properties": {
-                    "思考": {
-                        "type": "string",
-                        "description": "This is your analysis related to the price consistency issue. If you identify any price consistency issue, you need to explain them in detail here."
-                    },
-                    "回答": {
-                        "type": "int",
-                        "description": "A number or None.(The number is the image number where you identify the issue. For example, if you notice that the price expression of the same product is inconsistent between the second and fourth screenshots, you need to output 4 here.)",
-                    }
-                },
-                "required": ["思考", "回答"],
-                "additionalProperties": False
+                "Answer": {
+                    "type": "integer",
+                    "description": "A number or None.(The number is the image number where you identify the issue. For example, if you notice that the price expression of the same product is inconsistent between the second and fourth screenshots, you need to output 4 here.)",
+                }
             },
+            "additionalProperties": False,
+            "required": [
+                "Thought", "Answer"
+            ],
+        },
+
         "strict": True
-    }
+    },
+
 }

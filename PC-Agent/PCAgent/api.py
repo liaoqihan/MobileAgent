@@ -1,5 +1,6 @@
 import argparse
 import base64
+import json
 from typing import List
 import requests
 import time
@@ -170,15 +171,26 @@ def inference_chat_azure(chat, model,response_format=None):
                 max_tokens=4096
             )
         else:
-            chat_completion = client.beta.chat.completions.parse(
+            chat_completion = client.chat.completions.create(
                 model=ICBUGPTModels.GPT_4_O_0806.value,
                 messages=data["messages"],
                 timeout=600,
                 max_tokens=4096,
                 response_format=response_format
             )
+            # chat_completion = client.beta.chat.completions.parse(
+            #     model=ICBUGPTModels.GPT_4_O_0806.value,
+            #     messages=data["messages"],
+            #     timeout=600,
+            #     max_tokens=4096,
+            #     response_format=response_format
+            # )
 
-        res_content = chat_completion.choices[0].message.content if not response_format else chat_completion.choices[0].message.parsed
+        res_content = chat_completion.choices[0].message.content
+        if response_format:
+            res_content = json.loads(res_content)
+        # res_content = chat_completion.choices[0].message.content if not response_format else chat_completion.choices[0].message.parsed
+
 
         usage = chat_completion.usage
         tokens_info = {

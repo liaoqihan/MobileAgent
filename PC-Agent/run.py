@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw
 from retrying import retry
 
 from utils.oss import upload_oos_file
-from utils.xl import BizNodeResult, UploadChatResultRequest, ai_agent_rec_bug, upload_chat_result
+from utils.xl import BizNodeResult, UploadChatResultRequest, ai_agent_rec_bug, upload_chat_result,appCode_map
 parser = argparse.ArgumentParser(description="PC Agent")
 parser.add_argument('--instruction', type=str, default='default')
 parser.add_argument('--icon_caption', type=int, default=1) # 0: w/o icon_caption
@@ -37,7 +37,7 @@ os.environ['aistudio_ak'] = args.aistudio_ak
 from PCAgent.api import inference_chat
 from PCAgent.text_localization import ocr
 from PCAgent.icon_localization import det
-from PCAgent.prompt import PriceValidateResp, get_action_prompt, get_price_validate_json_prompt, get_price_validate_prompt, get_reflect_prompt, get_memory_prompt, get_process_prompt
+from PCAgent.prompt import PriceValidateResp, get_action_prompt, get_price_validate_json_prompt, get_price_validate_prompt, get_reflect_prompt, get_memory_prompt, get_process_prompt,price_validate_response_format
 from PCAgent.chat import init_action_chat, init_reflect_chat, init_memory_chat, add_response, init_xl_chat
 
 from modelscope.pipelines import pipeline
@@ -934,13 +934,20 @@ all_origin_images = get_file_list(parent_dir=log_folder,key="_screenshot.png")
 # prompt_reqbody =  add_response("user", price_validate_prompt, xl_chat,all_origin_images)
 # res = inference_chat(prompt_reqbody, 'gpt-4o', API_url, token,response_format=PriceValidateResp)
 
+
+price_validate_prompt = get_price_validate_json_prompt(width,height,instruction,img_num=iter)
+xl_chat = init_xl_chat(in_json=True)
+prompt_reqbody =  add_response("user", price_validate_prompt, xl_chat,all_origin_images)
+res = inference_chat(prompt_reqbody, 'gpt-4o', API_url, token,response_format=price_validate_response_format)
+
+
 price_validate_prompt = get_price_validate_prompt(width,height,instruction,img_num=iter)
 xl_chat = init_xl_chat()
 prompt_reqbody =  add_response("user", price_validate_prompt, xl_chat,all_origin_images)
 res = inference_chat(prompt_reqbody, 'gpt-4o', API_url, token)
 save_response_to_log(log_folder, iter, price_validate_prompt, res,images=all_origin_images,log_name="商品一致性_gpt.txt")
 
-answer = res.split("### Answer ###")[-1].replace("\n", " ").strip()
+answer = res.get("Answer")
 takeTime = time.time()-start
 takeTime = f"{takeTime:.2f}"
 
@@ -953,13 +960,13 @@ uploadChatResultRequest = UploadChatResultRequest(
 has_price_issue = answer.isdigit() and (int(answer)-1) >= 0
 price_validate_str = "#######\n\n"
 price_validate_str += f"是否有价格一致性问题: {has_price_issue}\n\n"
-if has_price_issue:
-    # thought = res.split("### Thought ###")[-1].split("### Answer ###")[0].strip()
-    thought = res.split("### 思考 ###")[-1].split("### 回答 ###")[0].strip()
-    price_validate_str += f"{thought}"
-
+thought = res.get("Thought")
+price_validate_str += f"分析:\n{thought}"
 price_validate_str += "#######\n"
-uploadChatResultRequest.bizNodesResult[int(answer)-1].driverAssert = price_validate_str
+
+# index = int(answer)-1
+index = -1 # 不管有没有问题 分析都放在最后一张
+uploadChatResultRequest.bizNodesResult[index].driverAssert = price_validate_str
 
 for i,url in enumerate(all_origin_images_url):
     validate_str = "#######\n\n"
@@ -967,9 +974,12 @@ for i,url in enumerate(all_origin_images_url):
     res = ai_agent_rec_bug(image_urls=url)
     has_issue = "没有体验问题" not in res
     validate_str += f"是否有其他问题: {has_issue}\n\n"
-    if has_issue:
-        validate_str += f"{res}\n"
+    validate_str += f"{res}\n"
     uploadChatResultRequest.bizNodesResult[i].driverAssert += validate_str
 
-
 upload_chat_result_res = upload_chat_result(uploadChatResultRequest)
+
+# for scene,appCode in appCode_map.items():
+
+
+

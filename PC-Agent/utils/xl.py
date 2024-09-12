@@ -13,12 +13,17 @@ def generate_unique_id(len=64):
 image_urls = [
 "http://b2b-algo-test.oss-cn-hangzhou-zmf.aliyuncs.com/lqh/%E9%A6%96%E9%A1%B5%E8%BF%9B%E5%85%A5'Supplier%20leaderboard'%E4%B9%9D%E6%9C%88%E5%A4%A7%E4%BF%83%E4%BC%9A%E5%9C%BA%20%E9%80%89%E6%8B%A9%E4%B8%80%E4%B8%AA%E5%95%86%E5%93%81%E4%B8%8B%E5%8D%95%EF%BC%88%E5%A6%82%E6%9E%9C%E6%97%A0%E6%B3%95%E4%B8%8B%E5%8D%95%20%E5%88%99%E6%B2%9F%E9%80%9A%E8%AF%A2%E7%9B%98%EF%BC%89_20240906104205/iter_1_screenshot.png"
 ]
+appCode_map = {
+    "体验问题识别": "pDwdGSKuvAs",
+    "价格一致性":"QrbnhMwByKA"
+}
 aistudio_ak = os.getenv('aistudio_ak')
-def ai_agent_rec_bug(image_urls=image_urls, country="美国", language="英语", currency="USD"):
+def ai_agent_rec_bug(image_urls=image_urls, country="美国", language="英语", currency="USD",scene="体验问题识别",appVersion="latest"):
     """
     agent for 获取点击坐标
     """
-    url = f'https://aistudio.alibaba-inc.com/api/aiapp/run/pDwdGSKuvAs/latest'
+    appCode = appCode_map.get(scene)
+    url = f'https://aistudio.alibaba-inc.com/api/aiapp/run/{appCode}/{appVersion}'
     headers = {
         "accept": "*/*",
         "Content-Type": "application/json",
@@ -125,24 +130,39 @@ if __name__ == "__main__":
         json.dump(results, file, indent=4, ensure_ascii=False)
 
 
-@dataclass
-class WorkspaceAiReqBody:
-    appCode: str  # 应用code，必填
-    pageNo: int  # 页码，必填
-    pageSize: int  # 数量，必填
-
-    empIds: Optional[List[str]] = None  # 员工工号，非必填
-    endTime: Optional[str] = None  # 结束时间，非必填
-    startTime: Optional[str] = None  # 开始时间，格式：yyyy-MM-dd HH:mm:ss，非必填
-    messageIds: Optional[List[str]] = None  # 一个对话的消息id或者traceId，非必填
-    source: Optional[List[str]] = None  # 来源（DEBUG：调试，API：API接口，WEB：分享页面，IDEAS：IDEAs分享页面，DING：钉钉机器人），非必填
-    sessionId: Optional[str] = None  # 会话记录id，非必填
-    orderBy: str = "DESC"  # 排序，非必填，默认倒序 ASC:升序 DESC:倒序
+# @dataclass
+# class WorkspaceAiReqBody:
+#     empIds: Optional[int] = 432145  # 员工工号，非必填
+#     endTime: Optional[str] = None  # 结束时间，非必填
+#     startTime: Optional[str] = None  # 开始时间，格式：yyyy-MM-dd HH:mm:ss，非必填
+#     messageIds: Optional[List[str]] = None  # 一个对话的消息id或者traceId，非必填
+#     source: Optional[List[str]] = None  # 来源（DEBUG：调试，API：API接口，WEB：分享页面，IDEAS：IDEAs分享页面，DING：钉钉机器人），非必填
+#     sessionId: Optional[str] = None  # 会话记录id，非必填
+#     orderBy: str = "DESC"  # 排序，非必填，默认倒序 ASC:升序 DESC:倒序
 
 
-def workspace_ai_request(appCode,appVersion):
-    url = f"https://aistudio.alibaba-inc.com/api/aiapp/run/{appCode}/{appVersion}"
-    header = {
-        "X-AK":aistudio_ak
-    }
-    WorkspaceAiReqBody
+# def workspace_ai_request(appCode,appVersion,image_urls):
+#     url = f"https://aistudio.alibaba-inc.com/api/aiapp/run/{appCode}/{appVersion}"
+#     headers = {
+#         "X-AK":aistudio_ak
+#     }
+#     workspaceAiReqBody
+#     mediaEntities = [{"content":url} for url in image_urls]
+#     workspaceAiReqBody = WorkspaceAiReqBody(
+
+#     )
+#     req_dict = asdict(workspaceAiReqBody)
+#     print(f"workspace_ai_request req:\n {json.dumps(req_dict,ensure_ascii=False)}")
+#     response = requests.post(url, json=req_dict,headers=headers)
+#     is_success = False
+#     try:
+#         is_success = response.json().get("success")
+#         print(f"workspace_ai_request response:\n {response.json()}")
+#     except Exception as e:
+#         pass
+
+#     if not is_success:
+#         raise Exception(f"workspace_ai_request failed response:{response.text}")
+#     historyId = response.json().get("data")
+#     # print(f"workspace_ai_request url: https://pre-xl.alibaba-inc.com/#/task/testCaseHistoryDetail?historyId={historyId}")
+#     return response
