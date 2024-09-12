@@ -315,6 +315,9 @@ Here are some examples to help you provide a more accurate answer:
 """
     return prompt
 
+def get_price_prompt_cn(img_num):
+    prompt = f"这是{img_num}张截图和对应的{img_num}张标注后的截图"
+    return prompt
 
 class PriceValidateResp(BaseModel):
     Thought: str
@@ -330,11 +333,11 @@ price_validate_response_format = {
             "properties": {
                 "Thought": {
                     "type": "string",
-                    "description": "This is your analysis related to the price consistency issue. If you identify any price consistency issue, you need to explain them in detail here."
+                    "description": "这是你关于价格一致性问题的分析。如果你识别到任何价格一致性问题，需要在此详细解释。"
                 },
                 "Answer": {
                     "type": "integer",
-                    "description": "A number or None.(The number is the image number where you identify the issue. For example, if you notice that the price expression of the same product is inconsistent between the second and fourth screenshots, you need to output 4 here.)",
+                    "description": "一个数字或'无'。（例如，如果你发现同一产品在第二张和第四张截图之间的价格表示不一致，你需要在此处输出4。",
                 }
             },
             "additionalProperties": False,

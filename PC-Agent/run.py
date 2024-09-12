@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw
 from retrying import retry
 
 from utils.oss import upload_oos_file
-from utils.xl import BizNodeResult, UploadChatResultRequest, ai_agent_rec_bug, upload_chat_result,appCode_map
+from utils.xl import BizNodeResult, UploadChatResultRequest, ai_agent_rec_bug, upload_chat_result,scene_appCode_map
 parser = argparse.ArgumentParser(description="PC Agent")
 parser.add_argument('--instruction', type=str, default='default')
 parser.add_argument('--icon_caption', type=int, default=1) # 0: w/o icon_caption
@@ -37,7 +37,7 @@ os.environ['aistudio_ak'] = args.aistudio_ak
 from PCAgent.api import inference_chat
 from PCAgent.text_localization import ocr
 from PCAgent.icon_localization import det
-from PCAgent.prompt import PriceValidateResp, get_action_prompt, get_price_validate_json_prompt, get_price_validate_prompt, get_reflect_prompt, get_memory_prompt, get_process_prompt,price_validate_response_format
+from PCAgent.prompt import PriceValidateResp, get_action_prompt, get_price_prompt_cn, get_price_validate_json_prompt, get_price_validate_prompt, get_reflect_prompt, get_memory_prompt, get_process_prompt,price_validate_response_format
 from PCAgent.chat import init_action_chat, init_reflect_chat, init_memory_chat, add_response, init_xl_chat
 
 from modelscope.pipelines import pipeline
@@ -611,7 +611,7 @@ import json
 import copy
 from PIL import Image, ImageDraw, ImageFont
 
-def mark_coordinate_on_image(image_path, coordinates, action):
+def mark_coordinate_on_image(image_path, coordinates, action,output_path=None):
     # 打开图像
     with Image.open(image_path) as img:
         draw = ImageDraw.Draw(img)
@@ -628,14 +628,20 @@ def mark_coordinate_on_image(image_path, coordinates, action):
             # 画一个红色的十字，标记坐标
             cross_size = 2000
             # 水平线
-            draw.line((x - cross_size, y, x + cross_size, y), fill='red', width=2)
+            draw.line((x - cross_size, y, x + cross_size, y), fill='red', width=5)
             # 垂直线
-            draw.line((x, y - cross_size, x, y + cross_size), fill='red', width=2)
+            draw.line((x, y - cross_size, x, y + cross_size), fill='red', width=5)
             # 在坐标旁边写出坐标值
-            draw.text((x + 5, y + 5), action, fill='red', font=font)
-        
+            draw.text((x + 10, y + 10), action, fill='red', font=font)
+
+            # 画一个红色的圆圈，标记坐标
+            circle_radius = 30
+            left_up_point = (x - circle_radius, y - circle_radius)
+            right_down_point = (x + circle_radius, y + circle_radius)
+            draw.ellipse([left_up_point, right_down_point], outline='red', width=5)
         # 保存新的图像
-        output_path = image_path.replace("screenshot",f"screenshot_{action}")
+        if output_path is None:
+            output_path = image_path.replace("screenshot",f"screenshot_{action}")
         img.save(output_path)
 
 # Function to create unique log folder
@@ -699,9 +705,11 @@ screenshot_som_file = f"{log_folder}/iter_{iter}_screenshot_som.png"
 perception_infos, width, height = get_perception_infos(screenshot_file, screenshot_som_file, font_path=args.font_path)
 shutil.rmtree(temp_file)
 os.mkdir(temp_file)
-bizNodeResultList = []
-all_origin_images_url = []
+
 need_stop = False
+summary_list = []
+action_list = []
+thought_list = []
 # chat_action = init_action_chat()
 while True:
     
@@ -717,6 +725,7 @@ while True:
     
     save_response_to_log(log_folder, iter, prompt_action, output_action,images=images)
     thought = output_action.split("### Thought ###")[-1].split("### Action ###")[0].replace("\n", " ").replace(":", "").replace("  ", " ").strip()
+    thought_list.append(thought)
     summary = output_action.split("### Operation ###")[-1].replace("\n", " ").replace("  ", " ").strip()
     action = output_action.split("### Action ###")[-1].split("### Operation ###")[0].replace("\n", " ").replace("  ", " ").strip()
     chat_action = add_response("assistant", output_action, chat_action)
@@ -798,23 +807,27 @@ while True:
         need_stop = True
     if "Type" in action or "Tap" in action:
         # mark_coordinate_on_image(screenshot_som_file,[(x,y)],action)
-        mark_coordinate_on_image(screenshot_file,[(x,y)],action)
+        mark_coordinate_on_image(screenshot_som_file,[(x,y)],action,screenshot_som_file)
     print(f"{action} 已完成")
 
 
-    delete_part_png(log_folder)
+    summary_list.append(summary)
+    action_list.append(action)
+    # upload_som_img_path_list = get_file_list(parent_dir=log_folder,key=f"iter_{iter}_screenshot_som.png")
+    # upload_som_img_url_list = upload_oos_file(upload_som_img_path_list)
 
+    # upload_origin_img_path_list = get_file_list(parent_dir=log_folder,key=f"iter_{iter}_screenshot.png")
+    # upload_origin_img_url_list = upload_oos_file(upload_som_img_path_list)
 
-    upload_img_path_list = get_file_list(parent_dir=log_folder,key=iter,key2="png")
-    upload_img_url_list = upload_oos_file(upload_img_path_list)
-    all_origin_images_url.append(upload_img_url_list[-1])
-    bizNodeResult = BizNodeResult(
-        description = summary,
-        actionName = action,
-        imgList = upload_img_url_list,
-        bizDesc=thought
-    )
-    bizNodeResultList.append(bizNodeResult)
+    # all_origin_images_url.append(upload_som_img_url_list[0])
+    # all_som_images_url.append(upload_origin_img_url_list[0])
+    # bizNodeResult = BizNodeResult(
+    #     description = summary,
+    #     actionName = action,
+    #     imgList = upload_som_img_url_list,
+    #     bizDesc=thought
+    # )
+    # bizNodeResultList.append(bizNodeResult)
 
     if need_stop:
         break
@@ -924,62 +937,109 @@ while True:
     if args.use_som == 1:
         os.rename(screenshot_som_after_file, screenshot_som_file)
 
+upload_som_img_path_list = get_file_list(parent_dir=log_folder,key=f"_screenshot_som.png")
+upload_som_img_url_list = upload_oos_file(upload_som_img_path_list)
 
-# 价格一致性的校验
+upload_origin_img_path_list = get_file_list(parent_dir=log_folder,key=f"_screenshot.png")
+upload_origin_img_url_list = upload_oos_file(upload_origin_img_path_list)
+
 
 all_origin_images = get_file_list(parent_dir=log_folder,key="_screenshot.png")
+all_som_images = get_file_list(parent_dir=log_folder,key="_screenshot_som.png")
+req_images = [*upload_origin_img_path_list,*upload_som_img_path_list]
+req_images_url = [*upload_origin_img_url_list,*upload_som_img_url_list]
+price_validate_prompt = get_price_prompt_cn(img_num=iter)
 
-# price_validate_prompt = get_price_validate_json_prompt(width,height,instruction,img_num=iter)
-# xl_chat = init_xl_chat(in_json=True)
+# 框架ai方式
+# xl_chat = init_xl_chat(task=instruction,width=width,height=height,image_num=iter)
 # prompt_reqbody =  add_response("user", price_validate_prompt, xl_chat,all_origin_images)
-# res = inference_chat(prompt_reqbody, 'gpt-4o', API_url, token,response_format=PriceValidateResp)
+# res = inference_chat(prompt_reqbody, 'gpt-4o', API_url, token,response_format=price_validate_response_format)
+
+#ai studio方式
+
+bizNodeResultList = []
+for i in range(iter):
+    bizNodeResult = BizNodeResult(
+        description = summary_list[i],
+        actionName = action_list[i],
+        imgList = [upload_som_img_url_list[i]],
+        bizDesc=thought
+    )
+    bizNodeResultList.append(bizNodeResult)
+
+variableMap = {
+    'task': instruction,
+    'width': width,
+    'height': height,
+    'image_num': iter
+}
 
 
-price_validate_prompt = get_price_validate_json_prompt(width,height,instruction,img_num=iter)
-xl_chat = init_xl_chat(in_json=True)
-prompt_reqbody =  add_response("user", price_validate_prompt, xl_chat,all_origin_images)
-res = inference_chat(prompt_reqbody, 'gpt-4o', API_url, token,response_format=price_validate_response_format)
-
-
-price_validate_prompt = get_price_validate_prompt(width,height,instruction,img_num=iter)
-xl_chat = init_xl_chat()
-prompt_reqbody =  add_response("user", price_validate_prompt, xl_chat,all_origin_images)
-res = inference_chat(prompt_reqbody, 'gpt-4o', API_url, token)
-save_response_to_log(log_folder, iter, price_validate_prompt, res,images=all_origin_images,log_name="商品一致性_gpt.txt")
-
-answer = res.get("Answer")
-takeTime = time.time()-start
-takeTime = f"{takeTime:.2f}"
-
-
-uploadChatResultRequest = UploadChatResultRequest(
-    instruction = instruction,
-    bizNodesResult = bizNodeResultList,
-    takeTime=takeTime
-)
-has_price_issue = answer.isdigit() and (int(answer)-1) >= 0
-price_validate_str = "#######\n\n"
-price_validate_str += f"是否有价格一致性问题: {has_price_issue}\n\n"
-thought = res.get("Thought")
-price_validate_str += f"分析:\n{thought}"
-price_validate_str += "#######\n"
-
-# index = int(answer)-1
-index = -1 # 不管有没有问题 分析都放在最后一张
-uploadChatResultRequest.bizNodesResult[index].driverAssert = price_validate_str
-
-for i,url in enumerate(all_origin_images_url):
+# 通用体验问题校验
+for i,url in enumerate(upload_origin_img_url_list):
     validate_str = "#######\n\n"
 
     res = ai_agent_rec_bug(image_urls=url)
     has_issue = "没有体验问题" not in res
     validate_str += f"是否有其他问题: {has_issue}\n\n"
     validate_str += f"{res}\n"
-    uploadChatResultRequest.bizNodesResult[i].driverAssert += validate_str
+    bizNodeResultList[i].driverAssert = validate_str
+    debug_bizNodeResultList = copy.deepcopy(bizNodeResultList)
 
-upload_chat_result_res = upload_chat_result(uploadChatResultRequest)
 
-# for scene,appCode in appCode_map.items():
+# 
+def debug():
+    res = ai_agent_rec_bug(image_urls=req_images_url,variableMap=variableMap,scene="价格一致性",prompt=price_validate_prompt)
+    try:
+        res_dict = json.loads(res)
+    except Exception as e:
+        res = res.replace("```json\n","").replace("\n```","")
+        res_dict = json.loads(res)
+    has_price_issue = res_dict.get("has_price_issue")
+    thought = res_dict.get("thought")
 
+    price_validate_str = "#######\n\n"
+    price_validate_str += f"是否有价格一致性问题: {has_price_issue}\n\n"
+    price_validate_str += f"分析:\n{thought}"
+    price_validate_str += "#######\n"
+
+    # index = int(answer)-1
+    index = -1 # 不管有没有问题 分析都放在最后一张
+    debug_driverAssert = '#######\n\n是否有其他问题: False\n\n问题详情：\n1. 本地化币种\n   - 当前页面显示的价格为 "$203.00", "$201.00", "$192.00" 和 "$188.00"，这些价格符号和格式是符合美国地区的 USD 格式，没有问题。\n2. 本地化数字\n   - 数字格式是符合美国地区的格式的，没有问题。\n3. 页面显示语言\n   - 页面显示语言为英语，符合美国地区的语言习惯，没有问题。\n4. 推荐内容\n   - 页面推荐内容与产品相关，符合电商业务习惯，没有问题。\n5. 其他\n   - 页面没有白屏，没有漏翻问题。\n\n综上所述：\n没有体验问题。\n'
+    bizNodeResultList[index].driverAssert = debug_driverAssert + price_validate_str #debug
+    # uploadChatResultRequest.bizNodesResult[index].driverAssert +=  price_validate_str
+
+
+
+    takeTime = time.time()-start
+    takeTime = f"{takeTime:.2f}"
+    uploadChatResultRequest = UploadChatResultRequest(
+        instruction = instruction,
+        bizNodesResult = bizNodeResultList,
+        takeTime=takeTime
+    )
+    upload_chat_result_res = upload_chat_result(uploadChatResultRequest)
+    return upload_chat_result_res,has_price_issue
+
+upload_chat_result_res,has_price_issue = debug()
+
+def debug_api(e_has_price_issue=True,num_tasks=5):
+    count = 0
+    upload_chat_result_url_list = [None] * num_tasks
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num_tasks) as executor:
+        futures = {executor.submit(debug): i for i in range(num_tasks)}
+        
+        for future in concurrent.futures.as_completed(futures):
+            i = futures[future]
+            try:
+                upload_chat_result_url_list[i], has_price_issue = future.result()
+                if has_price_issue == e_has_price_issue:
+                    count += 1
+            except Exception as exc:
+                print(f"Task {i} generated an exception: {exc}")
+    suc = count/num_tasks
+    return upload_chat_result_url_list,suc
+
+upload_chat_result_url_list,suc = debug_api(num_tasks=1)
 
 

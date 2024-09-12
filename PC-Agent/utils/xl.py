@@ -10,24 +10,22 @@ def generate_session_id():
 def generate_unique_id(len=64):
     return uuid.uuid4().int >> len  # 取前64位
 
-image_urls = [
-"http://b2b-algo-test.oss-cn-hangzhou-zmf.aliyuncs.com/lqh/%E9%A6%96%E9%A1%B5%E8%BF%9B%E5%85%A5'Supplier%20leaderboard'%E4%B9%9D%E6%9C%88%E5%A4%A7%E4%BF%83%E4%BC%9A%E5%9C%BA%20%E9%80%89%E6%8B%A9%E4%B8%80%E4%B8%AA%E5%95%86%E5%93%81%E4%B8%8B%E5%8D%95%EF%BC%88%E5%A6%82%E6%9E%9C%E6%97%A0%E6%B3%95%E4%B8%8B%E5%8D%95%20%E5%88%99%E6%B2%9F%E9%80%9A%E8%AF%A2%E7%9B%98%EF%BC%89_20240906104205/iter_1_screenshot.png"
-]
-appCode_map = {
+
+scene_appCode_map = {
     "体验问题识别": "pDwdGSKuvAs",
     "价格一致性":"QrbnhMwByKA"
 }
-aistudio_ak = os.getenv('aistudio_ak')
-def ai_agent_rec_bug(image_urls=image_urls, country="美国", language="英语", currency="USD",scene="体验问题识别",appVersion="latest"):
+variableMap = {'country': '美国', 'language': '英语', 'currency': 'USD'}
+def ai_agent_rec_bug(image_urls, variableMap=variableMap,scene="体验问题识别",appVersion="latest",prompt="检测图片的体验问题"):
     """
     agent for 获取点击坐标
     """
-    appCode = appCode_map.get(scene)
+    appCode = scene_appCode_map.get(scene)
     url = f'https://aistudio.alibaba-inc.com/api/aiapp/run/{appCode}/{appVersion}'
     headers = {
         "accept": "*/*",
         "Content-Type": "application/json",
-        "X-AK": aistudio_ak
+        "X-AK": os.getenv('aistudio_ak')
     }
     session_id = generate_session_id()
 
@@ -47,14 +45,10 @@ def ai_agent_rec_bug(image_urls=image_urls, country="美国", language="英语",
     data = {
         "mediaEntities": media_entities_list,
         "empId": "109547",
-        "question": "检测图片的体验问题",
+        "question": prompt,
         "sessionId": session_id,
         "stream": "false",
-        "variableMap": {
-            "country": country,
-            "language": language,
-            "currency": currency
-        }
+        "variableMap": variableMap
     }
     print("agent api:", url)
     print("agent data:", data)
@@ -100,7 +94,7 @@ class UploadChatResultRequest:
     testCaseHistoryId: Optional[str] = None
 
 
-def upload_chat_result(uploadChatResultRequest):
+def upload_chat_result(uploadChatResultRequest,return_url=True):
 
     url = "http://pre-xl.alibaba-inc.com/api/uploadChatResult"
     req_dict = asdict(uploadChatResultRequest)
@@ -116,7 +110,10 @@ def upload_chat_result(uploadChatResultRequest):
     if not is_success:
         raise Exception(f"upload_chat_result failed response:{response.text}")
     historyId = response.json().get("data")
-    print(f"upload_chat_result url: https://pre-xl.alibaba-inc.com/#/task/testCaseHistoryDetail?historyId={historyId}")
+    xl_url = f"https://pre-xl.alibaba-inc.com/#/task/testCaseHistoryDetail?historyId={historyId}"
+    print(f"upload_chat_result url: {xl_url}")
+    if return_url:
+        return xl_url
     return response
 
 
