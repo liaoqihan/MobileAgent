@@ -419,6 +419,7 @@ def icon_parallel(img, det, img_x_list, img_y_list, padding, i):
 
 @print_execution_time
 def get_perception_infos(screenshot_file, screenshot_som_file, font_path):
+    time.sleep(3)
     get_screenshot(path=screenshot_file)
     
     total_width, total_height = Image.open(screenshot_file).size
@@ -989,6 +990,7 @@ for i,url in enumerate(upload_origin_img_url_list):
 
 # 
 def debug():
+    # 价格一致性
     res = ai_agent_rec_bug(image_urls=req_images_url,variableMap=variableMap,scene="价格一致性",prompt=price_validate_prompt)
     try:
         res_dict = json.loads(res)
@@ -1003,12 +1005,6 @@ def debug():
     price_validate_str += f"分析:\n{thought}"
     price_validate_str += "#######\n"
 
-    # index = int(answer)-1
-    index = -1 # 不管有没有问题 分析都放在最后一张
-    debug_driverAssert = '#######\n\n是否有其他问题: False\n\n问题详情：\n1. 本地化币种\n   - 当前页面显示的价格为 "$203.00", "$201.00", "$192.00" 和 "$188.00"，这些价格符号和格式是符合美国地区的 USD 格式，没有问题。\n2. 本地化数字\n   - 数字格式是符合美国地区的格式的，没有问题。\n3. 页面显示语言\n   - 页面显示语言为英语，符合美国地区的语言习惯，没有问题。\n4. 推荐内容\n   - 页面推荐内容与产品相关，符合电商业务习惯，没有问题。\n5. 其他\n   - 页面没有白屏，没有漏翻问题。\n\n综上所述：\n没有体验问题。\n'
-    bizNodeResultList[index].driverAssert = debug_driverAssert + price_validate_str #debug
-    # uploadChatResultRequest.bizNodesResult[index].driverAssert +=  price_validate_str
-
 
 
     takeTime = time.time()-start
@@ -1018,6 +1014,10 @@ def debug():
         bizNodesResult = bizNodeResultList,
         takeTime=takeTime
     )
+
+    # index = -1 # 不管有没有问题 分析都放在最后一张
+    # uploadChatResultRequest.bizNodesResult[index].driverAssert +=  price_validate_str
+
     upload_chat_result_res = upload_chat_result(uploadChatResultRequest)
     return upload_chat_result_res,has_price_issue
 
