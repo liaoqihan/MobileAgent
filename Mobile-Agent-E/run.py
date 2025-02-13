@@ -6,6 +6,7 @@ import os
 import json
 import shutil
 import time
+from logger_config import logger
 
 def main():
     import argparse
@@ -61,8 +62,8 @@ def main():
                 screenrecord=args.screenrecord
             )
         except Exception as e:
-            print(f"Failed when doing task: {args.instruction}")
-            print("ERROR:", e)
+            logger.error(f"Failed when doing task: {args.instruction}")
+            logger.error("ERROR:", e)
     else:
         # multi task inference
         task_json = json.load(open(args.tasks_json, "r"))
@@ -114,10 +115,8 @@ def main():
             print("\n\n### Running on task:", task["instruction"])
             print("\n\n")
             instruction = task["instruction"]
-            if "task_id" in task:
-                task_id = task["task_id"]
-            else:
-                task_id = args.tasks_json.split("/")[-1].split(".")[0] + f"_{args.setting}" + f"_{i}"
+            t = time.strftime("%Y%m%d-%H%M%S")
+            task_id = task.get("task_id",f"{instruction}_{t}")
             try:
                 run_single_task(
                     instruction,

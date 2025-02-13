@@ -28,25 +28,39 @@ import json
 from dataclasses import dataclass, field, asdict
 
 import os
+import configparser
+
+import util
+from logger_config import logger
+# 创建配置解析器对象
+config = configparser.ConfigParser()
+
+# 读取配置文件
+config.read('config.ini')
+
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 ####################################### Edit your Setting #########################################
 # Your ADB path
-ADB_PATH = os.environ.get("ADB_PATH", default="adb")
+ADB_PATH = config.get('DEFAULT', 'ADB_PATH', fallback='/opt/homebrew/bin/adb')
 
-## Reasoning model configs
-BACKBONE_TYPE = os.environ.get("BACKBONE_TYPE", default="OpenAI") # "OpenAI" or "Gemini" or "Claude"
-assert BACKBONE_TYPE in ["OpenAI", "Gemini", "Claude"], "Unknown BACKBONE_TYPE"
+# Reasoning model configs
+BACKBONE_TYPE = config.get('DEFAULT', 'BACKBONE_TYPE', fallback='OpenAI')
+assert BACKBONE_TYPE in ["OpenAI", "Gemini", "Claude", "AiStudio"], "Unknown BACKBONE_TYPE"
 print("### Using BACKBONE_TYPE:", BACKBONE_TYPE)
 
-OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", default=None)
+# 设置 OPENAI_API_URL 的默认值
+OPENAI_API_URL = config.get('DEFAULT', 'OPENAI_API_URL', fallback="https://api.openai.com/v1/chat/completions")
+OPENAI_API_KEY = config.get('DEFAULT', 'OPENAI_API_KEY', fallback=None)
 
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions" # OpenAI compatible
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", default=None)
+GEMINI_API_URL = config.get('DEFAULT', 'GEMINI_API_URL', fallback="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
+GEMINI_API_KEY = config.get('DEFAULT', 'GEMINI_API_KEY', fallback=None)
 
-CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
-CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY", default=None)
+CLAUDE_API_URL = config.get('DEFAULT', 'CLAUDE_API_URL', fallback="https://api.anthropic.com/v1/messages")
+CLAUDE_API_KEY = config.get('DEFAULT', 'CLAUDE_API_KEY', fallback=None)
+
+AISTUDIO_API_URL = config.get('DEFAULT', 'AISTUDIO_API_URL', fallback=None)
+AISTUDIO_API_KEY = config.get('DEFAULT', 'AISTUDIO_API_KEY', fallback=None)
 
 if BACKBONE_TYPE == "OpenAI":
     REASONING_MODEL = "gpt-4o-2024-11-20"
@@ -57,19 +71,19 @@ elif BACKBONE_TYPE == "Gemini":
 elif BACKBONE_TYPE == "Claude":
     REASONING_MODEL = "claude-3-5-sonnet-20241022"
     KNOWLEDGE_REFLECTION_MODEL = "claude-3-5-sonnet-20241022"
+else:
+    REASONING_MODEL = "aistudio_reasoning_model"
+    KNOWLEDGE_REFLECTION_MODEL = "aistudio_reflection_model"
 
-## you can specify a jsonl file path for tracking API usage
-USAGE_TRACKING_JSONL = None # e.g., usage_tracking.jsonl
+# You can specify a jsonl file path for tracking API usage
+USAGE_TRACKING_JSONL = config.get('DEFAULT', 'USAGE_TRACKING_JSONL', fallback="Mobile-Agent-E/trace_api_usage")
 
-## Perceptor configs
-# Choose between "api" and "local". api: use the qwen api. local: use the local qwen checkpoint
-CAPTION_CALL_METHOD = "api"
-# Choose between "qwen-vl-plus" and "qwen-vl-max" if use api method. Choose between "qwen-vl-chat" and "qwen-vl-chat-int4" if use local method.
-CAPTION_MODEL = "qwen-vl-plus"
+# Perceptor configs
+CAPTION_CALL_METHOD = config.get('DEFAULT', 'CAPTION_CALL_METHOD', fallback='api')
+CAPTION_MODEL = config.get('DEFAULT', 'CAPTION_MODEL', fallback='qwen-vl-plus')
 
-QWEN_API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
-QWEN_API_KEY = os.environ.get("QWEN_API_KEY", default=None)
-
+QWEN_API_URL = config.get('DEFAULT', 'QWEN_API_URL', fallback="https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions")
+QWEN_API_KEY = config.get('DEFAULT', 'QWEN_API_KEY', fallback=None)
 
 ## Initial Tips provided by user; You can add additional custom tips ###
 INIT_TIPS = """0. Do not add any payment information. If you are asked to sign in, ignore it or sign in as a guest if possible. Close any pop-up windows when opening an app.
@@ -375,7 +389,10 @@ def finish(
 
 import copy
 import random
-def get_reasoning_model_api_response(chat, model_type=BACKBONE_TYPE, model=None, temperature=0.0):
+def get_reasoning_model_api_response(
+        chat=None, model_type=BACKBONE_TYPE, model=None, temperature=0.0,
+        image_urls=None, variableMap=None,scene="体验问题识别",appVersion="latest",question=None,session_id=None # 兼容aistudio
+    ):
     
     # chat messages in openai format
     model = REASONING_MODEL if model is None else model
@@ -385,6 +402,10 @@ def get_reasoning_model_api_response(chat, model_type=BACKBONE_TYPE, model=None,
         return inference_chat(chat, model, GEMINI_API_URL, GEMINI_API_KEY, usage_tracking_jsonl=USAGE_TRACKING_JSONL, temperature=temperature)
     elif model_type == "Claude":
         return inference_chat(chat, model, CLAUDE_API_URL, CLAUDE_API_KEY, usage_tracking_jsonl=USAGE_TRACKING_JSONL, temperature=temperature)
+    elif model_type == "AiStudio":
+        if question is None:
+            question, image_urls = util.get_user_prompt_from_origin_mes(chat)
+        return util.call_austudio_api(AISTUDIO_API_KEY,image_urls, variableMap,scene,appVersion,question,session_id)
     else:
         raise ValueError(f"Unknown model type: {model_type}")
     
@@ -409,12 +430,10 @@ def run_single_task(
     err_to_manager_thresh = 2, # 2 consecutive errors up-report to the manager
     enable_experience_retriever = False,
     temperature=0.0,
-    screenrecord=False,
+    screenrecord=True,
 ):
 
     ### set up log dir ###
-    if task_id is None:
-        task_id = time.strftime("%Y%m%d-%H%M%S")
     log_dir = f"{log_root}/{run_name}/{task_id}"
     if os.path.exists(log_dir) and not overwrite_log_dir:
         print("The log dir already exists. And overwrite_log_dir is set to False. Skipping...")
@@ -576,6 +595,11 @@ def run_single_task(
         json.dump(steps, f, indent=4)
 
     iter = 0
+    planning_session_id = util.generate_session_id()
+    actions_session_id = util.generate_session_id()
+    action_reflection_session_id = util.generate_session_id()
+    note_session_id = util.generate_session_id()
+
     while True:
         iter += 1
 
@@ -719,7 +743,11 @@ def run_single_task(
         prompt_planning = manager.get_prompt(info_pool)
         chat_planning = manager.init_chat()
         chat_planning = add_response("user", prompt_planning, chat_planning, image=screenshot_file)
-        output_planning = get_reasoning_model_api_response(chat_planning, temperature=temperature)
+        output_planning = get_reasoning_model_api_response(
+            chat_planning, temperature=temperature, 
+            session_id=planning_session_id, scene="planning"
+        )
+
         parsed_result_planning = manager.parse_response(output_planning)
         
         info_pool.plan = parsed_result_planning['plan']
@@ -823,7 +851,10 @@ def run_single_task(
         prompt_action = operator.get_prompt(info_pool)
         chat_action = operator.init_chat()
         chat_action = add_response("user", prompt_action, chat_action, image=screenshot_file)
-        output_action = get_reasoning_model_api_response(chat_action, temperature=temperature)
+        output_action = get_reasoning_model_api_response(
+            chat_action, temperature=temperature,
+            scene="actions",session_id=actions_session_id
+        )
         parsed_result_action = operator.parse_response(output_action)
         action_thought, action_object_str, action_description = parsed_result_action['thought'], parsed_result_action['action'], parsed_result_action['description']
         action_decision_end_time = time.time()
@@ -856,7 +887,7 @@ def run_single_task(
                 persistent_tips_path = persistent_tips_path,
                 persistent_shortcuts_path = persistent_shortcuts_path
             ) # 
-            print("WARNING!!: Abnormal finishing:", action_object_str)
+            logger.error("WARNING!!: Abnormal finishing:", action_object_str)
             if screenrecord:
                 end_recording(ADB_PATH, output_recording_path=cur_output_recording_path)
             return
@@ -934,7 +965,9 @@ def run_single_task(
         prompt_action_reflect = action_reflector.get_prompt(info_pool)
         chat_action_reflect = action_reflector.init_chat()
         chat_action_reflect = add_response_two_image("user", prompt_action_reflect, chat_action_reflect, [last_screenshot_file, screenshot_file])
-        output_action_reflect = get_reasoning_model_api_response(chat_action_reflect, temperature=temperature)
+        output_action_reflect = get_reasoning_model_api_response(
+            chat_action_reflect, temperature=temperature,
+            scene="action_reflection",session_id=action_reflection_session_id)
         parsed_result_action_reflect = action_reflector.parse_response(output_action_reflect)
         outcome, error_description, progress_status = (
             parsed_result_action_reflect['outcome'], 
@@ -1006,7 +1039,10 @@ def run_single_task(
             prompt_note = notetaker.get_prompt(info_pool)
             chat_note = notetaker.init_chat()
             chat_note = add_response("user", prompt_note, chat_note, image=screenshot_file) # new screenshot
-            output_note = get_reasoning_model_api_response(chat_note, temperature=temperature)
+            output_note = get_reasoning_model_api_response(
+                chat_note, temperature=temperature,
+                scene="note",session_id=note_session_id
+                )
             parsed_result_note = notetaker.parse_response(output_note)
             important_notes = parsed_result_note['important_notes']
             info_pool.important_notes = important_notes

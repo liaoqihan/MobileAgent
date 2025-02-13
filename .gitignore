@@ -9,3 +9,4 @@ log/
 tmp_lqh/
 model_cache/
 .DS_Store
+Mobile-Agent-E/config.ini

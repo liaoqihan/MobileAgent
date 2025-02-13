@@ -1,0 +1,15 @@
+{
+    "length": 1,
+    "scenario": "testing",
+    "scenario_id": 0,
+    "tasks": [
+        {
+            "instruction": "模拟用户在facebook看到淘宝的广告，点击后唤端进入淘宝app看到对应商品：用facebook打开有淘宝广告的帖子https://www.facebook.com/100068920027287/posts/9460380217318961/?app=fbl，点击帖子的商品唤起淘宝，校验是否唤端成功且还原到对应商品页面。（手机已经装了facebook和taobao的app）",
+            "type": "single_app",
+            "apps": [
+                "taobao",
+                "facebook"
+            ]
+        }
+    ]
+}

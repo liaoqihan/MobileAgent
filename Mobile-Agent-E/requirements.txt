@@ -17,3 +17,10 @@ datasets
 modelscope
 matplotlib
 dashscope
+
+# oss2
+# resourceagent==0.3.2
+# tidevice
+# adbutils
+# lxml
+# apkutils

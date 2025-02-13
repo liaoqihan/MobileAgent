@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "run_tasks_evolution",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/run.py",
+      "console": "integratedTerminal",
+      "args": [
+          "--setting", "evolution",
+          "--tasks_json", "data/custom_tasks.json"
+      ],
+      "env": {},
+      "justMyCode": true,
+      "python": "/Users/juexin/miniforge3/envs/mobile_agent_e/bin/python" // conda环境 which python
+
+    }
+  ]
+}
+

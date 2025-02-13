@@ -5,14 +5,15 @@ from PIL import Image
 from time import sleep
 
 def get_screenshot(adb_path):
-    command = adb_path + " shell rm /sdcard/screenshot.png"
-    subprocess.run(command, capture_output=True, text=True, shell=True)
+    # TODO subprocess.run失败的校验
+    command1 = adb_path + " shell rm /sdcard/screenshot.png"
+    subprocess.run(command1, capture_output=True, text=True, shell=True)
     time.sleep(0.5)
-    command = adb_path + " shell screencap -p /sdcard/screenshot.png"
-    subprocess.run(command, capture_output=True, text=True, shell=True)
+    command2 = adb_path + " shell screencap -p /sdcard/screenshot.png"
+    subprocess.run(command2, capture_output=True, text=True, shell=True)
     time.sleep(0.5)
-    command = adb_path + " pull /sdcard/screenshot.png ./screenshot"
-    subprocess.run(command, capture_output=True, text=True, shell=True)
+    command3 = adb_path + " pull /sdcard/screenshot.png ./screenshot"
+    subprocess.run(command3, capture_output=True, text=True, shell=True)
     image_path = "./screenshot/screenshot.png"
     save_path = "./screenshot/screenshot.jpg"
     image = Image.open(image_path)

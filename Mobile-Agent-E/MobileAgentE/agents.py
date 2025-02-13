@@ -181,7 +181,7 @@ class BaseAgent(ABC):
     def parse_response(self, response: str) -> dict:
         pass
 
-
+taobao_prompt = "All user requests are related to the Taobao app."
 class Manager(BaseAgent):
 
     def init_chat(self):
@@ -505,6 +505,14 @@ class Operator(BaseAgent):
         
         elif "Wait".lower() == action.lower():
             time.sleep(10)
+
+        # 自定义方法
+
+        elif "open_url_in_app" == action.lower():
+            pass
+
+
+    
         
     def execute(self, action_str: str, info_pool: InfoPool, screenshot_log_dir=None, iter="", **kwargs) -> None:
         action_object = extract_json_object(action_str)
