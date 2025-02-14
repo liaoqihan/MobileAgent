@@ -506,10 +506,10 @@ class Operator(BaseAgent):
         elif "Wait".lower() == action.lower():
             time.sleep(10)
 
-        # 自定义方法
+        # # 自定义方法
 
-        elif "open_url_in_app" == action.lower():
-            pass
+        # elif "open_url_in_app" == action.lower():
+        #     pass
 
 
     
